@@ -1,0 +1,14 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - tools/**
+    - .appdata/**
+    - .dart_tool/**
+    - .flutter_home/**
+    - .localappdata/**
+    - .pub-cache/**
+
+linter:
+  rules:
+    prefer_single_quotes: true
