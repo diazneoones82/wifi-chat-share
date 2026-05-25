@@ -88,6 +88,7 @@ Open the gear icon in the app:
 
 - Dark mode: switches the app theme.
 - Notifications: enables popup notifications for received messages and files.
+- Start with Windows: opens Wifi Chat Share automatically when the current Windows user signs in.
 - Received files location: choose the download/save folder.
 
 If no folder is selected, received files are saved in the app's default Documents location.
@@ -105,6 +106,12 @@ The Windows app keeps running when minimized and moves to the taskbar tray/notif
   - Exit
 
 Use Exit from the tray menu when you want to fully close the background app.
+
+### Start With Windows
+
+On Windows, open Settings and enable Start with Windows if you want Wifi Chat Share to start automatically after sign-in.
+
+This uses the current user's Windows startup registry entry, so it does not need Administrator permission. If you move the portable app folder to a different location, turn Start with Windows off and back on so Windows stores the new executable path.
 
 ### Windows Troubleshooting
 

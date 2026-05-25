@@ -31,6 +31,7 @@ class WifiChatShareApp extends StatefulWidget {
 class _WifiChatShareAppState extends State<WifiChatShareApp> {
   bool darkMode = false;
   bool notificationsEnabled = true;
+  bool startAtStartup = false;
   String? downloadDirectory;
 
   @override
@@ -47,9 +48,13 @@ class _WifiChatShareAppState extends State<WifiChatShareApp> {
     setState(() {
       darkMode = prefs.getBool('darkMode') ?? false;
       notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
+      startAtStartup = prefs.getBool('startAtStartup') ?? false;
       downloadDirectory = prefs.getString('downloadDirectory');
     });
     await NotificationService.instance.setEnabled(notificationsEnabled);
+    if (Platform.isWindows && startAtStartup) {
+      await WindowsStartupService.instance.setEnabled(true);
+    }
   }
 
   Future<void> _setDarkMode(bool value) async {
@@ -76,6 +81,16 @@ class _WifiChatShareAppState extends State<WifiChatShareApp> {
     setState(() => notificationsEnabled = value);
   }
 
+  Future<void> _setStartAtStartup(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final applied = await WindowsStartupService.instance.setEnabled(value);
+    await prefs.setBool('startAtStartup', applied);
+    if (!mounted) {
+      return;
+    }
+    setState(() => startAtStartup = applied);
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -99,9 +114,11 @@ class _WifiChatShareAppState extends State<WifiChatShareApp> {
         darkMode: darkMode,
         downloadDirectory: downloadDirectory,
         notificationsEnabled: notificationsEnabled,
+        startAtStartup: startAtStartup,
         onDarkModeChanged: _setDarkMode,
         onDownloadDirectoryChanged: _setDownloadDirectory,
         onNotificationsChanged: _setNotificationsEnabled,
+        onStartAtStartupChanged: _setStartAtStartup,
       ),
     );
   }
@@ -112,18 +129,22 @@ class HomeScreen extends StatefulWidget {
     required this.darkMode,
     required this.downloadDirectory,
     required this.notificationsEnabled,
+    required this.startAtStartup,
     required this.onDarkModeChanged,
     required this.onDownloadDirectoryChanged,
     required this.onNotificationsChanged,
+    required this.onStartAtStartupChanged,
     super.key,
   });
 
   final bool darkMode;
   final String? downloadDirectory;
   final bool notificationsEnabled;
+  final bool startAtStartup;
   final ValueChanged<bool> onDarkModeChanged;
   final ValueChanged<String?> onDownloadDirectoryChanged;
   final ValueChanged<bool> onNotificationsChanged;
+  final ValueChanged<bool> onStartAtStartupChanged;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -257,9 +278,11 @@ class _HomeScreenState extends State<HomeScreen> {
         darkMode: widget.darkMode,
         downloadDirectory: widget.downloadDirectory,
         notificationsEnabled: widget.notificationsEnabled,
+        startAtStartup: widget.startAtStartup,
         onDarkModeChanged: widget.onDarkModeChanged,
         onDownloadDirectoryChanged: widget.onDownloadDirectoryChanged,
         onNotificationsChanged: widget.onNotificationsChanged,
+        onStartAtStartupChanged: widget.onStartAtStartupChanged,
       ),
     );
   }
@@ -270,18 +293,22 @@ class SettingsDialog extends StatelessWidget {
     required this.darkMode,
     required this.downloadDirectory,
     required this.notificationsEnabled,
+    required this.startAtStartup,
     required this.onDarkModeChanged,
     required this.onDownloadDirectoryChanged,
     required this.onNotificationsChanged,
+    required this.onStartAtStartupChanged,
     super.key,
   });
 
   final bool darkMode;
   final String? downloadDirectory;
   final bool notificationsEnabled;
+  final bool startAtStartup;
   final ValueChanged<bool> onDarkModeChanged;
   final ValueChanged<String?> onDownloadDirectoryChanged;
   final ValueChanged<bool> onNotificationsChanged;
+  final ValueChanged<bool> onStartAtStartupChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -306,6 +333,14 @@ class SettingsDialog extends StatelessWidget {
               value: notificationsEnabled,
               onChanged: onNotificationsChanged,
             ),
+            if (Platform.isWindows)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Start with Windows'),
+                subtitle: const Text('Open Wifi Chat Share when you sign in'),
+                value: startAtStartup,
+                onChanged: onStartAtStartupChanged,
+              ),
             const SizedBox(height: 12),
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -1282,6 +1317,50 @@ class WindowsTrayBridge {
       await _channel.invokeMethod<void>('updatePeers', peers);
     } catch (_) {
       return;
+    }
+  }
+}
+
+class WindowsStartupService {
+  WindowsStartupService._();
+
+  static final WindowsStartupService instance = WindowsStartupService._();
+
+  static const String _runKey = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run';
+  static const String _valueName = 'WifiChatShare';
+
+  Future<bool> setEnabled(bool value) async {
+    if (!Platform.isWindows) {
+      return false;
+    }
+
+    try {
+      if (value) {
+        final executable = Platform.resolvedExecutable;
+        final result = await Process.run('reg', [
+          'add',
+          _runKey,
+          '/v',
+          _valueName,
+          '/t',
+          'REG_SZ',
+          '/d',
+          '"$executable"',
+          '/f',
+        ]);
+        return result.exitCode == 0;
+      }
+
+      final result = await Process.run('reg', [
+        'delete',
+        _runKey,
+        '/v',
+        _valueName,
+        '/f',
+      ]);
+      return result.exitCode == 0 || result.exitCode == 1;
+    } catch (_) {
+      return false;
     }
   }
 }
