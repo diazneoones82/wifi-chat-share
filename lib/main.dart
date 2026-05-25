@@ -341,6 +341,17 @@ class SettingsDialog extends StatelessWidget {
                 value: startAtStartup,
                 onChanged: onStartAtStartupChanged,
               ),
+            if (Platform.isAndroid)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.flash_on_outlined),
+                title: const Text('Android Quick Settings tile'),
+                subtitle: const Text('Add a tile to open or close the app'),
+                trailing: FilledButton(
+                  onPressed: AndroidQuickSettingsService.instance.requestTile,
+                  child: const Text('Add'),
+                ),
+              ),
             const SizedBox(height: 12),
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -1359,6 +1370,25 @@ class WindowsStartupService {
         '/f',
       ]);
       return result.exitCode == 0 || result.exitCode == 1;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+class AndroidQuickSettingsService {
+  AndroidQuickSettingsService._();
+
+  static final AndroidQuickSettingsService instance = AndroidQuickSettingsService._();
+
+  static const MethodChannel _channel = MethodChannel('wifi_chat_share/android');
+
+  Future<bool> requestTile() async {
+    if (!Platform.isAndroid) {
+      return false;
+    }
+    try {
+      return await _channel.invokeMethod<bool>('requestQuickSettingsTile') ?? false;
     } catch (_) {
       return false;
     }

@@ -161,6 +161,9 @@ Enable Developer Options and USB debugging on the Android phone, connect it by U
 - Some phones pause background network activity aggressively. Keep the app visible while testing.
 - Notifications are optional and can be changed from the app Settings.
 - The app supports dark mode from the Settings screen.
+- Open Settings and tap Add under Android Quick Settings tile to add the tile on Android 13+.
+- The Quick Settings tile opens Wifi Chat Share when it is off and closes the app when tapped while active.
+- On older Android versions, manually edit Quick Settings and drag the Wifi Chat Share tile into the active tile area if Android does not show the add prompt.
 
 ## iPhone / iPad App
 
