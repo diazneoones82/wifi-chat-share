@@ -313,87 +313,133 @@ class SettingsDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final effectivePath = downloadDirectory ?? 'Documents / app documents';
-    return AlertDialog(
-      title: const Text('Settings'),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
+    final mediaQuery = MediaQuery.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final compactText = mediaQuery.copyWith(
+      textScaler: mediaQuery.textScaler.clamp(maxScaleFactor: 1.18),
+    );
+
+    return MediaQuery(
+      data: compactText,
+      child: Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Dark mode'),
-              value: darkMode,
-              onChanged: onDarkModeChanged,
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Notifications'),
-              subtitle: const Text('Show popups for incoming chats and files'),
-              value: notificationsEnabled,
-              onChanged: onNotificationsChanged,
-            ),
-            if (Platform.isWindows)
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Start with Windows'),
-                subtitle: const Text('Open Wifi Chat Share when you sign in'),
-                value: startAtStartup,
-                onChanged: onStartAtStartupChanged,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 22, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Settings',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Done',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
               ),
-            if (Platform.isAndroid)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.flash_on_outlined),
-                title: const Text('Android Quick Settings tile'),
-                subtitle: const Text('Add a tile to open or close the app'),
-                trailing: FilledButton(
-                  onPressed: AndroidQuickSettingsService.instance.requestTile,
-                  child: const Text('Add'),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SwitchListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      title: const Text('Dark mode'),
+                      value: darkMode,
+                      onChanged: onDarkModeChanged,
+                    ),
+                    SwitchListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      title: const Text('Notifications'),
+                      subtitle: const Text('Popups for chats and files'),
+                      value: notificationsEnabled,
+                      onChanged: onNotificationsChanged,
+                    ),
+                    if (Platform.isWindows)
+                      SwitchListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                        title: const Text('Start with Windows'),
+                        subtitle: const Text('Open when you sign in'),
+                        value: startAtStartup,
+                        onChanged: onStartAtStartupChanged,
+                      ),
+                    if (Platform.isAndroid)
+                      ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                        leading: const Icon(Icons.flash_on_outlined),
+                        title: const Text('Quick Settings tile'),
+                        subtitle: const Text('Open or close from Android controls'),
+                        trailing: FilledButton.tonal(
+                          onPressed: AndroidQuickSettingsService.instance.requestTile,
+                          child: const Text('Add'),
+                        ),
+                      ),
+                    const Divider(height: 24),
+                    ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      leading: const Icon(Icons.folder_outlined),
+                      title: const Text('Received files'),
+                      subtitle: Text(
+                        effectivePath,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            const SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.folder_outlined),
-              title: const Text('Received files location'),
-              subtitle: Text(
-                effectivePath,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            Container(
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
+              ),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
               children: [
-                TextButton(
-                  onPressed: () => onDownloadDirectoryChanged(null),
-                  child: const Text('Use default'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  icon: const Icon(Icons.folder_open),
-                  label: const Text('Choose'),
-                  onPressed: () async {
-                    final path = await FilePicker.platform.getDirectoryPath(
-                      dialogTitle: 'Choose received files folder',
-                    );
-                    if (path != null) {
-                      onDownloadDirectoryChanged(path);
-                    }
-                  },
-                ),
-              ],
+                  TextButton(
+                    onPressed: () => onDownloadDirectoryChanged(null),
+                    child: const Text('Use default'),
+                  ),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.folder_open),
+                    label: const Text('Choose'),
+                    onPressed: () async {
+                      final path = await FilePicker.platform.getDirectoryPath(
+                        dialogTitle: 'Choose received files folder',
+                      );
+                      if (path != null) {
+                        onDownloadDirectoryChanged(path);
+                      }
+                    },
+                  ),
+                  FilledButton.tonal(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Done'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Done'),
-        ),
-      ],
     );
   }
 }
