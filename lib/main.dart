@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -137,6 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     service = LanChatService(downloadDirectory: widget.downloadDirectory)..start();
+    WindowsTrayBridge.instance.attach(service);
   }
 
   @override
@@ -149,6 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WindowsTrayBridge.instance.detach(service);
     messageController.dispose();
     service.dispose();
     super.dispose();
@@ -1220,6 +1223,63 @@ class NotificationService {
       await _plugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.requestNotificationsPermission();
+    } catch (_) {
+      return;
+    }
+  }
+}
+
+class WindowsTrayBridge {
+  WindowsTrayBridge._();
+
+  static final WindowsTrayBridge instance = WindowsTrayBridge._();
+
+  static const MethodChannel _channel = MethodChannel('wifi_chat_share/tray');
+
+  LanChatService? _service;
+  VoidCallback? _listener;
+
+  Future<void> attach(LanChatService service) async {
+    if (!Platform.isWindows) {
+      return;
+    }
+    detach(_service);
+    _service = service;
+    _listener = () => _updatePeers(service);
+    service.addListener(_listener!);
+    _channel.setMethodCallHandler(_handleMethodCall);
+    await _updatePeers(service);
+  }
+
+  void detach(LanChatService? service) {
+    if (!Platform.isWindows || service == null || service != _service) {
+      return;
+    }
+    final listener = _listener;
+    if (listener != null) {
+      service.removeListener(listener);
+    }
+    _listener = null;
+    _service = null;
+    _channel.setMethodCallHandler(null);
+  }
+
+  Future<dynamic> _handleMethodCall(MethodCall call) async {
+    switch (call.method) {
+      case 'trayRefresh':
+        await _service?.refreshNow();
+        return null;
+      default:
+        throw MissingPluginException('Unknown tray method ${call.method}');
+    }
+  }
+
+  Future<void> _updatePeers(LanChatService service) async {
+    final peers = service.visiblePeers
+        .map((peer) => '${peer.name} - ${peer.platformLabel} - ${peer.address.address}')
+        .toList(growable: false);
+    try {
+      await _channel.invokeMethod<void>('updatePeers', peers);
     } catch (_) {
       return;
     }

@@ -92,6 +92,20 @@ Open the gear icon in the app:
 
 If no folder is selected, received files are saved in the app's default Documents location.
 
+### Windows Taskbar Tray
+
+The Windows app keeps running when minimized and moves to the taskbar tray/notification area.
+
+- Click Minimize to hide the app window while discovery, chat, and file receiving continue.
+- Double-click the tray icon to show the app again.
+- Right-click the tray icon for:
+  - Show Wifi Chat Share
+  - Refresh nearby devices
+  - Connections list
+  - Exit
+
+Use Exit from the tray menu when you want to fully close the background app.
+
 ### Windows Troubleshooting
 
 If the app opens but another PC cannot send to it:
