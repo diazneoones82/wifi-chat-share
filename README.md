@@ -90,6 +90,7 @@ Open the gear icon in the app:
 - Notifications: enables popup notifications for received messages and files.
 - Start with Windows: opens Wifi Chat Share automatically when the current Windows user signs in.
 - Received files location: choose the download/save folder.
+- The Settings screen uses the shared compact scrollable layout, so the same cleaner Settings design appears on Windows, Android, iOS, macOS, and Linux after each platform is rebuilt.
 
 If no folder is selected, received files are saved in the app's default Documents location.
 
@@ -161,6 +162,7 @@ Enable Developer Options and USB debugging on the Android phone, connect it by U
 - Some phones pause background network activity aggressively. Keep the app visible while testing.
 - Notifications are optional and can be changed from the app Settings.
 - The app supports dark mode from the Settings screen.
+- The Settings screen is compact and scrollable so it fits Android phones with large display/text settings.
 - Open Settings and tap Add under Android Quick Settings tile to add the tile on Android 13+.
 - The Quick Settings tile opens Wifi Chat Share when it is off and closes the app when tapped while active.
 - On older Android versions, manually edit Quick Settings and drag the Wifi Chat Share tile into the active tile area if Android does not show the add prompt.
@@ -359,6 +361,8 @@ Open Xcode when you need signing, provisioning, TestFlight, App Store upload, or
 open ios/Runner.xcworkspace
 open macos/Runner.xcworkspace
 ```
+
+The app UI is shared Flutter code. Pull the latest GitHub version on the Mac mini before building iOS or macOS so the updated Settings layout, dark mode, notification options, and file-sharing UI are included in the Apple apps.
 
 ## Repository Notes
 
