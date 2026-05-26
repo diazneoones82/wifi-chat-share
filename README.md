@@ -72,9 +72,9 @@ To run on a new Windows desktop:
 On every Windows PC:
 
 1. Open the extracted app folder.
-2. Right-click `Allow_WifiChatShare_Firewall.ps1`.
-3. Choose Run with PowerShell.
-4. Approve the Administrator/UAC prompt.
+2. Either open Wifi Chat Share Settings and click **Run** beside **Allow firewall**, or right-click `Allow_WifiChatShare_Firewall.ps1`.
+3. Choose Run with PowerShell if launching the script manually.
+4. Approve the Administrator/UAC prompt. Administrator access is required only for changing Windows Firewall rules.
 
 If Windows blocks script execution, open PowerShell as Administrator in the extracted folder and run:
 
@@ -91,6 +91,8 @@ Open the gear icon in the app:
 - Dark mode: switches the app theme.
 - Notifications: enables popup notifications for received messages and files.
 - Start with Windows: opens Wifi Chat Share automatically when the current Windows user signs in.
+- Allow firewall: runs the Windows firewall setup helper. This requires Administrator/UAC approval because it creates inbound firewall rules.
+- Test peer port: runs the TCP `45873` port test helper. This does not need Administrator permission.
 - Received files location: choose the download/save folder.
 - The Settings screen uses the shared compact scrollable layout, so the same cleaner Settings design appears on Windows, Android, iOS, macOS, and Linux after each platform is rebuilt.
 
@@ -125,11 +127,13 @@ If the app opens but another PC cannot send to it:
 3. Check the app's **Ping IP** label and try `ping <that-ip-address>` from the other PC.
 4. Keep the app open on both devices.
 5. Try Refresh on both devices.
-6. Run the included port test script from the release folder:
+6. Open Settings and click **Run** beside **Test peer port**, or run the included port test script from the release folder:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Test_WifiChatShare_Port.ps1
 ```
+
+The port test helper asks for the peer **Ping IP** and does not require Administrator permission.
 
 If Windows says the app is corrupted, extract the whole ZIP again and run `wifi_chat_share.exe` from inside the extracted release folder.
 

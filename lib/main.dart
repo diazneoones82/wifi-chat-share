@@ -381,6 +381,30 @@ class SettingsDialog extends StatelessWidget {
                         value: startAtStartup,
                         onChanged: onStartAtStartupChanged,
                       ),
+                    if (Platform.isWindows)
+                      ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                        leading: const Icon(Icons.security_outlined),
+                        title: const Text('Allow firewall'),
+                        subtitle: const Text('Requires Administrator permission'),
+                        trailing: FilledButton.tonal(
+                          onPressed: () => WindowsDesktopTools.instance.runFirewallScript(),
+                          child: const Text('Run'),
+                        ),
+                      ),
+                    if (Platform.isWindows)
+                      ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                        leading: const Icon(Icons.network_ping_outlined),
+                        title: const Text('Test peer port'),
+                        subtitle: const Text('No Administrator permission needed'),
+                        trailing: FilledButton.tonal(
+                          onPressed: () => WindowsDesktopTools.instance.runPortTestScript(),
+                          child: const Text('Run'),
+                        ),
+                      ),
                     if (Platform.isAndroid)
                       ListTile(
                         dense: true,
@@ -1513,6 +1537,48 @@ class WindowsStartupService {
     } catch (_) {
       return false;
     }
+  }
+}
+
+class WindowsDesktopTools {
+  WindowsDesktopTools._();
+
+  static final WindowsDesktopTools instance = WindowsDesktopTools._();
+
+  Future<void> runFirewallScript() async {
+    if (!Platform.isWindows) {
+      return;
+    }
+    final script = _scriptPath('Allow_WifiChatShare_Firewall.ps1');
+    final command =
+        'Start-Process -FilePath powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File ${_quoteForPowerShell(script)}"';
+    await Process.start(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+      mode: ProcessStartMode.detached,
+    );
+  }
+
+  Future<void> runPortTestScript() async {
+    if (!Platform.isWindows) {
+      return;
+    }
+    final script = _scriptPath('Test_WifiChatShare_Port.ps1');
+    final command =
+        'Start-Process -FilePath powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -NoExit -File ${_quoteForPowerShell(script)}"';
+    await Process.start(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+      mode: ProcessStartMode.detached,
+    );
+  }
+
+  String _scriptPath(String fileName) {
+    return '${File(Platform.resolvedExecutable).parent.path}${Platform.pathSeparator}$fileName';
+  }
+
+  String _quoteForPowerShell(String value) {
+    return "'${value.replaceAll("'", "''")}'";
   }
 }
 
