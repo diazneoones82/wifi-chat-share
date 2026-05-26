@@ -154,6 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final LanChatService service;
   String? selectedPeerId;
   final TextEditingController messageController = TextEditingController();
+  final FocusNode messageFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -173,6 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     WindowsTrayBridge.instance.detach(service);
+    messageFocusNode.dispose();
     messageController.dispose();
     service.dispose();
     super.dispose();
@@ -225,6 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               service: service,
                               peer: selectedPeer,
                               controller: messageController,
+                              focusNode: messageFocusNode,
                               onBack: () => setState(() => selectedPeerId = null),
                             ),
                     ),
@@ -257,6 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   service: service,
                                   peer: selectedPeer,
                                   controller: messageController,
+                                  focusNode: messageFocusNode,
                                 ),
                         ),
                       ],
@@ -509,6 +513,7 @@ class PeerList extends StatelessWidget {
                       final peer = peers[index];
                       final selected = selectedPeerId == peer.id;
                       return ListTile(
+                        key: ValueKey(peer.id),
                         selected: selected,
                         selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -536,6 +541,7 @@ class ChatPane extends StatelessWidget {
     required this.service,
     required this.peer,
     required this.controller,
+    required this.focusNode,
     this.onBack,
     super.key,
   });
@@ -543,6 +549,7 @@ class ChatPane extends StatelessWidget {
   final LanChatService service;
   final PeerDevice peer;
   final TextEditingController controller;
+  final FocusNode focusNode;
   final VoidCallback? onBack;
 
   @override
@@ -601,6 +608,7 @@ class ChatPane extends StatelessWidget {
                 Expanded(
                   child: TextField(
                     controller: controller,
+                    focusNode: focusNode,
                     minLines: 1,
                     maxLines: 4,
                     textInputAction: TextInputAction.send,
@@ -633,6 +641,9 @@ class ChatPane extends StatelessWidget {
     }
     controller.clear();
     service.sendText(peer, text);
+    if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+      focusNode.requestFocus();
+    }
   }
 }
 
@@ -776,11 +787,24 @@ class LanChatService extends ChangeNotifier {
   bool _disposed = false;
   bool isRunning = false;
 
+  void _setStatus(String value, {bool notify = true}) {
+    if (lastStatus == value) {
+      return;
+    }
+    lastStatus = value;
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
   List<PeerDevice> get visiblePeers {
     final values = peers.values.toList()
       ..sort((a, b) {
-        final fresh = b.lastSeen.compareTo(a.lastSeen);
-        return fresh == 0 ? a.name.compareTo(b.name) : fresh;
+        final name = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        if (name != 0) {
+          return name;
+        }
+        return a.address.address.compareTo(b.address.address);
       });
     return values;
   }
@@ -910,13 +934,11 @@ class LanChatService extends ChangeNotifier {
       for (final address in await _broadcastTargets()) {
         socket.send(payload, address, discoveryPort);
       }
-      lastStatus = 'Discovery broadcast sent';
     } catch (error) {
       socket.close();
       _udpSocket = null;
-      lastStatus = 'Discovery send failed; reconnecting: ${_shortError(error)}';
+      _setStatus('Discovery send failed; reconnecting: ${_shortError(error)}');
     }
-    notifyListeners();
   }
 
   List<ChatMessage> messagesFor(String peerId) => List.unmodifiable(_messages[peerId] ?? const []);
@@ -928,7 +950,7 @@ class LanChatService extends ChangeNotifier {
   }
 
   Future<void> refreshNow() async {
-    final cutoff = DateTime.now().subtract(const Duration(seconds: 45));
+    final cutoff = DateTime.now().subtract(const Duration(minutes: 2));
     peers.removeWhere((_, peer) => peer.lastSeen.isBefore(cutoff));
 
     if (_server == null) {
@@ -1071,7 +1093,8 @@ class LanChatService extends ChangeNotifier {
       }
 
       final id = payload['id'] as String;
-      peers[id] = PeerDevice(
+      final existing = peers[id];
+      final updated = PeerDevice(
         id: id,
         name: (payload['name'] as String?)?.trim().isNotEmpty == true ? payload['name'] as String : 'Unknown device',
         platform: payload['platform'] as String? ?? 'unknown',
@@ -1079,8 +1102,17 @@ class LanChatService extends ChangeNotifier {
         port: payload['port'] as int? ?? transferPort,
         lastSeen: DateTime.now(),
       );
-      lastStatus = 'Found ${peers[id]?.name} at ${datagram.address.address}';
-      notifyListeners();
+      peers[id] = updated;
+
+      final changed = existing == null ||
+          existing.name != updated.name ||
+          existing.platform != updated.platform ||
+          existing.address.address != updated.address.address ||
+          existing.port != updated.port;
+      if (changed) {
+        _setStatus('Found ${updated.name} at ${datagram.address.address}', notify: false);
+        notifyListeners();
+      }
     } catch (_) {
       return;
     }
@@ -1194,8 +1226,11 @@ class LanChatService extends ChangeNotifier {
 
   void _removeStalePeers() {
     final cutoff = DateTime.now().subtract(const Duration(minutes: 5));
+    final before = peers.length;
     peers.removeWhere((_, peer) => peer.lastSeen.isBefore(cutoff));
-    notifyListeners();
+    if (peers.length != before) {
+      notifyListeners();
+    }
   }
 
   Future<void> _requestPermissions() async {
