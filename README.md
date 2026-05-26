@@ -39,6 +39,8 @@ If one device can see or send to another but replies fail, the receiving device 
 
 The app can only discover devices that are also running Wifi Chat Share. Operating systems do not allow an app to silently list every phone or computer on a network.
 
+The top status bar shows **Ping IP** for the current device. Use that address from another PC or phone when testing basic network reachability with `ping`.
+
 ## Windows App
 
 ### Run The Portable Build
@@ -120,9 +122,10 @@ If the app opens but another PC cannot send to it:
 
 1. Run `Allow_WifiChatShare_Firewall.ps1` as Administrator on the receiving PC.
 2. Make sure both devices are on the same Wi-Fi/LAN.
-3. Keep the app open on both devices.
-4. Try Refresh on both devices.
-5. Run the included port test script from the release folder:
+3. Check the app's **Ping IP** label and try `ping <that-ip-address>` from the other PC.
+4. Keep the app open on both devices.
+5. Try Refresh on both devices.
+6. Run the included port test script from the release folder:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Test_WifiChatShare_Port.ps1

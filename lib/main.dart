@@ -215,7 +215,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (isCompact) {
                 return Column(
                   children: [
-                    StatusBar(text: service.lastStatus),
+                    StatusBar(text: service.lastStatus, networkText: service.pingAddressLabel),
                     Expanded(
                       child: selectedPeer == null
                           ? PeerList(
@@ -237,7 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
               return Column(
                 children: [
-                  StatusBar(text: service.lastStatus),
+                  StatusBar(text: service.lastStatus, networkText: service.pingAddressLabel),
                   Expanded(
                     child: Row(
                       children: [
@@ -255,6 +255,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? EmptyState(
                                   isRunning: service.isRunning,
                                   deviceName: service.localName,
+                                  pingAddressLabel: service.pingAddressLabel,
                                 )
                               : ChatPane(
                                   service: service,
@@ -449,22 +450,41 @@ class SettingsDialog extends StatelessWidget {
 }
 
 class StatusBar extends StatelessWidget {
-  const StatusBar({required this.text, super.key});
+  const StatusBar({required this.text, required this.networkText, super.key});
 
   final String text;
+  final String networkText;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       color: colorScheme.surfaceContainerHighest,
-      child: Text(
-        text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              networkText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -724,11 +744,13 @@ class EmptyState extends StatelessWidget {
   const EmptyState({
     required this.isRunning,
     required this.deviceName,
+    required this.pingAddressLabel,
     super.key,
   });
 
   final bool isRunning;
   final String deviceName;
+  final String pingAddressLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -750,6 +772,15 @@ class EmptyState extends StatelessWidget {
                 deviceName,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                pingAddressLabel,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
               ),
               const SizedBox(height: 8),
               const Text(
@@ -775,6 +806,7 @@ class LanChatService extends ChangeNotifier {
   final Map<String, PeerDevice> peers = {};
   final Map<String, List<ChatMessage>> _messages = {};
   String? _downloadDirectory;
+  List<String> _localIPv4AddressText = const [];
   String lastStatus = 'Starting...';
 
   RawDatagramSocket? _udpSocket;
@@ -786,6 +818,13 @@ class LanChatService extends ChangeNotifier {
   bool _bindingServer = false;
   bool _disposed = false;
   bool isRunning = false;
+
+  String get pingAddressLabel {
+    if (_localIPv4AddressText.isEmpty) {
+      return 'Ping IP: checking...';
+    }
+    return 'Ping IP: ${_localIPv4AddressText.join(', ')}';
+  }
 
   void _setStatus(String value, {bool notify = true}) {
     if (lastStatus == value) {
@@ -815,6 +854,7 @@ class LanChatService extends ChangeNotifier {
     }
 
     await _requestPermissions();
+    await _refreshLocalAddresses(notify: false);
     await _bindDiscoverySocket();
     await _bindTransferServer();
 
@@ -905,8 +945,26 @@ class LanChatService extends ChangeNotifier {
     }
     await _bindDiscoverySocket();
     await _bindTransferServer();
+    await _refreshLocalAddresses();
     if (_udpSocket != null && _server != null && isRunning) {
       broadcastNow();
+    }
+  }
+
+  Future<void> _refreshLocalAddresses({bool notify = true}) async {
+    final addresses = (await _localIPv4Addresses())
+        .map((address) => address.address)
+        .toSet()
+        .toList()
+      ..sort();
+    final old = _localIPv4AddressText.join('|');
+    final updated = addresses.join('|');
+    if (old == updated) {
+      return;
+    }
+    _localIPv4AddressText = addresses;
+    if (notify) {
+      notifyListeners();
     }
   }
 
@@ -959,6 +1017,7 @@ class LanChatService extends ChangeNotifier {
     if (_udpSocket == null) {
       await _bindDiscoverySocket();
     }
+    await _refreshLocalAddresses(notify: false);
     await broadcastNow();
 
     lastStatus = peers.isEmpty ? 'Refreshed; waiting for nearby devices' : 'Refreshed ${peers.length} nearby device(s)';
