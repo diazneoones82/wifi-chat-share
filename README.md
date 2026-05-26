@@ -145,6 +145,18 @@ Current local APK output:
 build/app/outputs/flutter-apk/app-release.apk
 ```
 
+Play Store app bundle output:
+
+```text
+build/app/outputs/bundle/release/app-release.aab
+```
+
+Play Store package ID:
+
+```text
+com.neoapps.wifichatshare
+```
+
 ### Install With ADB
 
 Enable Developer Options and USB debugging on the Android phone, connect it by USB, accept the RSA prompt on the phone, then run:
@@ -173,6 +185,34 @@ Enable Developer Options and USB debugging on the Android phone, connect it by U
 - Open Settings and tap Add under Android Quick Settings tile to add the tile on Android 13+.
 - The Quick Settings tile opens Wifi Chat Share when it is off and closes the app when tapped while active.
 - On older Android versions, manually edit Quick Settings and drag the Wifi Chat Share tile into the active tile area if Android does not show the add prompt.
+
+### Google Play Store
+
+The Play Store release is prepared for the **Neo Apps** brand with package ID `com.neoapps.wifichatshare` and app version `1.0.0+1`.
+
+For a new Google Play app, upload the signed Android App Bundle:
+
+```text
+build/app/outputs/bundle/release/app-release.aab
+```
+
+The upload keystore files are local only and are intentionally ignored by Git:
+
+```text
+android/key.properties
+android/app/upload-keystore.jks
+```
+
+Back up both files securely. They are needed for future Play Store updates.
+
+To submit the app:
+
+1. Sign in to Google Play Console with the **Neo Apps** developer account.
+2. Create a new app named `Wifi Chat Share`.
+3. Use package ID `com.neoapps.wifichatshare`.
+4. Upload `app-release.aab` to an internal test, closed test, open test, or production release track.
+5. Complete the Play Console store listing, app content, data safety, privacy policy, target audience, and testing requirements.
+6. Submit for Google review.
 
 ## iPhone / iPad App
 

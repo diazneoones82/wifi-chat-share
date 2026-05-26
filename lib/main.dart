@@ -1360,7 +1360,7 @@ class NotificationService {
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
         windows: WindowsInitializationSettings(
           appName: 'Wifi Chat Share',
-          appUserModelId: 'com.example.wifi_chat_share',
+          appUserModelId: 'com.neoapps.wifichatshare',
           guid: '8d99c1d4-5424-45ce-b4f6-0215684b3c1d',
         ),
       );

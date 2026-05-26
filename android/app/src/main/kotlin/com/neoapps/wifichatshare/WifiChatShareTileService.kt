@@ -1,4 +1,4 @@
-package com.example.wifi_chat_share
+package com.neoapps.wifichatshare
 
 import android.app.PendingIntent
 import android.content.ComponentName

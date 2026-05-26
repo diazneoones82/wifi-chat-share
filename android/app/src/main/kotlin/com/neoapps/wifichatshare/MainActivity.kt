@@ -1,4 +1,4 @@
-package com.example.wifi_chat_share
+package com.neoapps.wifichatshare
 
 import android.app.StatusBarManager
 import android.content.BroadcastReceiver
@@ -95,7 +95,7 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         const val CHANNEL = "wifi_chat_share/android"
-        const val ACTION_CLOSE_APP = "com.example.wifi_chat_share.CLOSE_APP"
+        const val ACTION_CLOSE_APP = "com.neoapps.wifichatshare.CLOSE_APP"
         private const val PREFS = "wifi_chat_share_quick_settings"
         private const val KEY_TILE_ACTIVE = "tile_active"
 
