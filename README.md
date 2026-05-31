@@ -8,6 +8,7 @@ No cloud server is used. Every device that should appear in the list must have W
 
 - Nearby device discovery over local Wi-Fi/LAN
 - One-to-one chat
+- Copy sent or received message text from the chat bubbles
 - Share pictures, videos, documents, archives, installers, and any other file format
 - Received-file save location selector on desktop
 - Default received-file location under Documents/app storage when no folder is selected

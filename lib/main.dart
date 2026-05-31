@@ -701,6 +701,7 @@ class MessageBubble extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final align = message.outgoing ? Alignment.centerRight : Alignment.centerLeft;
     final isSystem = message.kind == MessageKind.system;
+    final copyText = _copyTextForMessage(message);
     final background = isSystem
         ? colorScheme.errorContainer
         : message.outgoing
@@ -726,27 +727,44 @@ class MessageBubble extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (message.kind == MessageKind.file)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.insert_drive_file_outlined, size: 20),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Flexible(
+                    child: message.kind == MessageKind.file
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.insert_drive_file_outlined, size: 20),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  message.fileName ?? 'File',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: foreground, fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ],
+                          )
+                        : SelectableText(
+                            message.text,
+                            style: TextStyle(color: foreground),
+                          ),
+                  ),
+                  if (copyText.trim().isNotEmpty) ...[
                     const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        message.fileName ?? 'File',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: foreground, fontWeight: FontWeight.w700),
-                      ),
+                    CopyMessageButton(
+                      text: copyText,
+                      foreground: foreground,
                     ),
                   ],
-                )
-              else
-                Text(message.text, style: TextStyle(color: foreground)),
+                ],
+              ),
               if (message.kind == MessageKind.file && message.filePath != null) ...[
                 const SizedBox(height: 6),
-                Text(
+                SelectableText(
                   message.filePath!,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: foreground.withAlpha(191)),
                 ),
@@ -759,6 +777,40 @@ class MessageBubble extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class CopyMessageButton extends StatelessWidget {
+  const CopyMessageButton({
+    required this.text,
+    required this.foreground,
+    super.key,
+  });
+
+  final String text;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Copy',
+      child: IconButton(
+        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        iconSize: 18,
+        color: foreground.withAlpha(204),
+        icon: const Icon(Icons.copy),
+        onPressed: () async {
+          await Clipboard.setData(ClipboardData(text: text));
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Copied')),
+            );
+          }
+        },
       ),
     );
   }
@@ -1740,6 +1792,17 @@ String _makeId() {
 String _safeFileName(String name) {
   final sanitized = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
   return sanitized.isEmpty ? 'received-file' : sanitized;
+}
+
+String _copyTextForMessage(ChatMessage message) {
+  if (message.kind == MessageKind.file) {
+    final parts = <String>[
+      if ((message.fileName ?? '').trim().isNotEmpty) message.fileName!.trim(),
+      if ((message.filePath ?? '').trim().isNotEmpty) message.filePath!.trim(),
+    ];
+    return parts.join('\n');
+  }
+  return message.text;
 }
 
 String _timeLabel(DateTime time) {
