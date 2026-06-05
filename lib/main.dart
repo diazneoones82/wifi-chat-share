@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -616,10 +617,20 @@ class ChatPane extends StatelessWidget {
                     ),
               title: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text('${peer.platformLabel} • ${peer.address.address}'),
-              trailing: IconButton(
-                tooltip: 'Send file',
-                icon: const Icon(Icons.attach_file),
-                onPressed: () => service.pickAndSendFile(peer),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Send file, image, ZIP, or document',
+                    icon: const Icon(Icons.attach_file),
+                    onPressed: () => service.pickAndSendFile(peer),
+                  ),
+                  IconButton(
+                    tooltip: 'Send folder',
+                    icon: const Icon(Icons.create_new_folder_outlined),
+                    onPressed: () => service.pickAndSendFolder(peer),
+                  ),
+                ],
               ),
             ),
           ),
@@ -645,9 +656,14 @@ class ChatPane extends StatelessWidget {
             child: Row(
               children: [
                 IconButton(
-                  tooltip: 'Attach file',
-                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  tooltip: 'Attach file, image, ZIP, or document',
+                  icon: const Icon(Icons.attach_file),
                   onPressed: () => service.pickAndSendFile(peer),
+                ),
+                IconButton(
+                  tooltip: 'Attach folder',
+                  icon: const Icon(Icons.create_new_folder_outlined),
+                  onPressed: () => service.pickAndSendFolder(peer),
                 ),
                 Expanded(
                   child: TextField(
@@ -701,6 +717,7 @@ class MessageBubble extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final align = message.outgoing ? Alignment.centerRight : Alignment.centerLeft;
     final isSystem = message.kind == MessageKind.system;
+    final isAttachment = message.kind == MessageKind.file || message.kind == MessageKind.folder;
     final copyText = _copyTextForMessage(message);
     final background = isSystem
         ? colorScheme.errorContainer
@@ -732,15 +749,20 @@ class MessageBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Flexible(
-                    child: message.kind == MessageKind.file
+                    child: isAttachment
                         ? Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.insert_drive_file_outlined, size: 20),
+                              Icon(
+                                message.kind == MessageKind.folder
+                                    ? Icons.folder_outlined
+                                    : Icons.insert_drive_file_outlined,
+                                size: 20,
+                              ),
                               const SizedBox(width: 8),
                               Flexible(
                                 child: Text(
-                                  message.fileName ?? 'File',
+                                  message.fileName ?? (message.kind == MessageKind.folder ? 'Folder' : 'File'),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(color: foreground, fontWeight: FontWeight.w700),
@@ -762,7 +784,7 @@ class MessageBubble extends StatelessWidget {
                   ],
                 ],
               ),
-              if (message.kind == MessageKind.file && message.filePath != null) ...[
+              if (isAttachment && message.filePath != null) ...[
                 const SizedBox(height: 6),
                 SelectableText(
                   message.filePath!,
@@ -1149,6 +1171,14 @@ class LanChatService extends ChangeNotifier {
     await sendFile(peer, File(path));
   }
 
+  Future<void> pickAndSendFolder(PeerDevice peer) async {
+    final path = await FilePicker.platform.getDirectoryPath(dialogTitle: 'Choose folder to send');
+    if (path == null) {
+      return;
+    }
+    await sendFolder(peer, Directory(path));
+  }
+
   Future<void> sendFile(PeerDevice peer, File file) async {
     final bytes = await file.readAsBytes();
     final name = file.uri.pathSegments.isEmpty ? 'file' : file.uri.pathSegments.last;
@@ -1194,6 +1224,55 @@ class LanChatService extends ChangeNotifier {
         ),
       );
       lastStatus = 'File send failed to ${peer.name}: ${_shortError(error)}';
+      notifyListeners();
+    }
+  }
+
+  Future<void> sendFolder(PeerDevice peer, Directory directory) async {
+    final name = _safeFileName(_folderNameFromPath(directory.path));
+    final message = ChatMessage(
+      id: _makeId(),
+      peerId: peer.id,
+      text: 'Sent folder $name',
+      kind: MessageKind.folder,
+      outgoing: true,
+      fileName: name,
+      filePath: directory.path,
+      createdAt: DateTime.now(),
+    );
+    _messages.putIfAbsent(peer.id, () => []).add(message);
+    notifyListeners();
+
+    try {
+      final bytes = await _zipDirectory(directory);
+      await _sendEnvelope(
+        peer,
+        {
+          'type': 'folder',
+          'id': message.id,
+          'fromId': localId,
+          'fromName': localName,
+          'folderName': name,
+          'byteLength': bytes.length,
+          'createdAt': message.createdAt.toIso8601String(),
+        },
+        bytes,
+      );
+      lastStatus = 'Folder sent to ${peer.name}: $name';
+      notifyListeners();
+    } catch (error) {
+      broadcastNow();
+      _messages[peer.id]?.add(
+        ChatMessage(
+          id: _makeId(),
+          peerId: peer.id,
+          text: 'Folder send failed: ${_shortError(error)}',
+          kind: MessageKind.system,
+          outgoing: true,
+          createdAt: DateTime.now(),
+        ),
+      );
+      lastStatus = 'Folder send failed to ${peer.name}: ${_shortError(error)}';
       notifyListeners();
     }
   }
@@ -1319,6 +1398,33 @@ class LanChatService extends ChangeNotifier {
         NotificationService.instance.showFile(fromName: fromName, fileName: fileName);
       }
 
+      if (header['type'] == 'folder') {
+        final folderName = _safeFileName(header['folderName'] as String? ?? 'received-folder');
+        final incomingDir = await _incomingDirectory();
+        if (!await incomingDir.exists()) {
+          await incomingDir.create(recursive: true);
+        }
+        final folder = Directory(
+          '${incomingDir.path}${Platform.pathSeparator}${DateTime.now().millisecondsSinceEpoch}-$folderName',
+        );
+        await _extractFolderArchive(body, folder);
+
+        _messages.putIfAbsent(fromId, () => []).add(
+              ChatMessage(
+                id: header['id'] as String? ?? _makeId(),
+                peerId: fromId,
+                text: 'Received folder $folderName',
+                kind: MessageKind.folder,
+                outgoing: false,
+                fileName: folderName,
+                filePath: folder.path,
+                createdAt: DateTime.tryParse(header['createdAt'] as String? ?? '') ?? DateTime.now(),
+              ),
+            );
+        lastStatus = 'Folder received from $fromName: $folderName';
+        NotificationService.instance.showFolder(fromName: fromName, folderName: folderName);
+      }
+
       notifyListeners();
     } catch (error) {
       lastStatus = 'Ignored dropped connection: ${_shortError(error)}';
@@ -1335,6 +1441,48 @@ class LanChatService extends ChangeNotifier {
     }
     final directory = await getApplicationDocumentsDirectory();
     return Directory('${directory.path}${Platform.pathSeparator}WifiChatShare');
+  }
+
+  Future<Uint8List> _zipDirectory(Directory directory) async {
+    if (!await directory.exists()) {
+      throw FileSystemException('Folder not found', directory.path);
+    }
+
+    final archive = Archive();
+    await for (final entity in directory.list(recursive: true, followLinks: false)) {
+      final relativePath = _relativeArchivePath(directory.path, entity.path);
+      if (relativePath.isEmpty) {
+        continue;
+      }
+      if (entity is Directory) {
+        archive.addFile(ArchiveFile.directory(relativePath));
+      } else if (entity is File) {
+        final bytes = await entity.readAsBytes();
+        archive.addFile(ArchiveFile(relativePath, bytes.length, bytes));
+      }
+    }
+
+    final encoded = ZipEncoder().encode(archive);
+    return Uint8List.fromList(encoded);
+  }
+
+  Future<void> _extractFolderArchive(Uint8List bytes, Directory folder) async {
+    await folder.create(recursive: true);
+    final archive = ZipDecoder().decodeBytes(bytes);
+    for (final entry in archive.files) {
+      final relativePath = _safeArchiveEntryPath(entry.name);
+      if (relativePath == null) {
+        continue;
+      }
+      final path = '${folder.path}${Platform.pathSeparator}$relativePath';
+      if (entry.isDirectory) {
+        await Directory(path).create(recursive: true);
+      } else if (entry.isFile) {
+        final file = File(path);
+        await file.parent.create(recursive: true);
+        await file.writeAsBytes(entry.content);
+      }
+    }
   }
 
   Future<List<InternetAddress>> _broadcastTargets() async {
@@ -1444,6 +1592,13 @@ class NotificationService {
     await _show(
       title: 'File from $fromName',
       body: fileName,
+    );
+  }
+
+  Future<void> showFolder({required String fromName, required String folderName}) async {
+    await _show(
+      title: 'Folder from $fromName',
+      body: folderName,
     );
   }
 
@@ -1690,7 +1845,7 @@ class PeerDevice {
   }
 }
 
-enum MessageKind { text, file, system }
+enum MessageKind { text, file, folder, system }
 
 class ChatMessage {
   const ChatMessage({
@@ -1794,8 +1949,35 @@ String _safeFileName(String name) {
   return sanitized.isEmpty ? 'received-file' : sanitized;
 }
 
+String _folderNameFromPath(String path) {
+  final normalized = path.replaceAll('\\', '/');
+  final parts = normalized.split('/').where((part) => part.trim().isNotEmpty).toList(growable: false);
+  return parts.isEmpty ? 'folder' : parts.last;
+}
+
+String _relativeArchivePath(String basePath, String filePath) {
+  final normalizedBase = basePath.replaceAll('\\', '/').replaceFirst(RegExp(r'/+$'), '');
+  final normalizedFile = filePath.replaceAll('\\', '/');
+  if (!normalizedFile.startsWith('$normalizedBase/')) {
+    return _folderNameFromPath(filePath);
+  }
+  return normalizedFile.substring(normalizedBase.length + 1);
+}
+
+String? _safeArchiveEntryPath(String name) {
+  final parts = name
+      .replaceAll('\\', '/')
+      .split('/')
+      .where((part) => part.trim().isNotEmpty && part != '.')
+      .toList(growable: false);
+  if (parts.isEmpty || parts.any((part) => part == '..')) {
+    return null;
+  }
+  return parts.map(_safeFileName).join(Platform.pathSeparator);
+}
+
 String _copyTextForMessage(ChatMessage message) {
-  if (message.kind == MessageKind.file) {
+  if (message.kind == MessageKind.file || message.kind == MessageKind.folder) {
     final parts = <String>[
       if ((message.fileName ?? '').trim().isNotEmpty) message.fileName!.trim(),
       if ((message.filePath ?? '').trim().isNotEmpty) message.filePath!.trim(),

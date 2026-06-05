@@ -9,7 +9,8 @@ No cloud server is used. Every device that should appear in the list must have W
 - Nearby device discovery over local Wi-Fi/LAN
 - One-to-one chat
 - Copy sent or received message text from the chat bubbles
-- Share pictures, videos, documents, archives, installers, and any other file format
+- Share pictures, videos, ZIP archives, Microsoft Office files, documents, installers, and any other file format
+- Share whole folders; Wifi Chat Share packages the selected folder internally and restores it as a folder on the receiving device
 - Received-file save location selector on desktop
 - Default received-file location under Documents/app storage when no folder is selected
 - Light and dark mode toggle
@@ -35,7 +36,7 @@ If one device can see or send to another but replies fail, the receiving device 
 3. Allow local network, firewall, and notification prompts when asked.
 4. Wait a few seconds for devices to appear.
 5. Select a nearby device.
-6. Type a message or choose a file to send.
+6. Type a message, choose a file, or choose a folder to send.
 7. Use Refresh to remove devices that have closed the app or left the network.
 
 The app can only discover devices that are also running Wifi Chat Share. Operating systems do not allow an app to silently list every phone or computer on a network.
@@ -98,6 +99,8 @@ Open the gear icon in the app:
 - The Settings screen uses the shared compact scrollable layout, so the same cleaner Settings design appears on Windows, Android, iOS, macOS, and Linux after each platform is rebuilt.
 
 If no folder is selected, received files are saved in the app's default Documents location.
+
+Use the paperclip button to send single files, including images, ZIP files, Word, Excel, PowerPoint, PDF, and all other file formats. Use the folder button to send a complete folder while preserving the files inside it.
 
 ### Windows Taskbar Tray
 
@@ -182,6 +185,8 @@ Enable Developer Options and USB debugging on the Android phone, connect it by U
 - Some phones pause background network activity aggressively. Keep the app visible while testing.
 - Notifications are optional and can be changed from the app Settings.
 - The app supports dark mode from the Settings screen.
+- The paperclip button sends images, ZIP files, Microsoft Office files, PDFs, and any other single file format.
+- The folder button sends a complete folder and restores it as a folder on the receiving device.
 - The Settings screen is compact and scrollable so it fits Android phones with large display/text settings.
 - Open Settings and tap Add under Android Quick Settings tile to add the tile on Android 13+.
 - The Quick Settings tile opens Wifi Chat Share when it is off and closes the app when tapped while active.
