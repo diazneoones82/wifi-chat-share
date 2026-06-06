@@ -16,6 +16,7 @@ No cloud server is used. Every device that should appear in the list must have W
 - Light, dark, and Matrix theme options
 - Optional notifications for incoming chat messages and received files
 - Refresh button that removes closed/stale peer entries without restarting the app
+- Delete nearby device rows by right-clicking on Windows or long-pressing on Android
 - Shared Flutter codebase for Windows, Android, iOS, macOS, and Linux
 
 ## Network Ports
@@ -41,9 +42,13 @@ If one device can see or send to another but replies fail, the receiving device 
 
 The app can only discover devices that are also running Wifi Chat Share. Operating systems do not allow an app to silently list every phone or computer on a network.
 
+On Windows, right-click a device row and choose Delete to hide it from Nearby devices until the next Refresh. On Android, long-press a device row and choose Delete. Use the delete-sweep button beside Nearby devices to clear the whole list until Refresh.
+
 The top status bar shows **Ping IP** for the current device. Use that address from another PC or phone when testing basic network reachability with `ping`.
 
 ## Windows App
+
+The Windows build requests matte black native title chrome and rounded window corners from Windows. On Windows versions that do not support those native DWM styling options, the app still runs normally with the standard system window frame.
 
 ### Run The Portable Build
 

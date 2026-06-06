@@ -98,8 +98,8 @@ ThemeData _matrixTheme() {
     surfaceContainerHigh: const Color(0xff0d1f12),
     surfaceContainerHighest: const Color(0xff112818),
     onSurfaceVariant: const Color(0xffa3e8b8),
-    outline: const Color(0xff1ee877),
-    outlineVariant: const Color(0xff175b32),
+    outline: const Color(0xff2b3a32),
+    outlineVariant: const Color(0xff1b2420),
     error: const Color(0xffff6b6b),
     onError: matrixBlack,
     errorContainer: const Color(0xff4a0909),
@@ -116,12 +116,12 @@ ThemeData _matrixTheme() {
 
   return base.copyWith(
     appBarTheme: AppBarTheme(
-      backgroundColor: matrixBlack.withAlpha(235),
-      foregroundColor: matrixGreen,
+      backgroundColor: const Color(0xff090b0c),
+      foregroundColor: const Color(0xffd8ffe4),
       elevation: 0,
       surfaceTintColor: Colors.transparent,
       titleTextStyle: base.textTheme.titleLarge?.copyWith(
-        color: matrixGreen,
+        color: const Color(0xffd8ffe4),
         fontWeight: FontWeight.w800,
       ),
     ),
@@ -130,20 +130,20 @@ ThemeData _matrixTheme() {
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: Color(0xff1ee877)),
+        side: const BorderSide(color: Color(0xff202725)),
       ),
     ),
-    dividerTheme: const DividerThemeData(color: Color(0xff175b32)),
+    dividerTheme: const DividerThemeData(color: Color(0xff202725)),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: const Color(0xff061008),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xff1ee877)),
+        borderSide: const BorderSide(color: Color(0xff202725)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xff175b32)),
+        borderSide: const BorderSide(color: Color(0xff202725)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
@@ -338,6 +338,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             peers: peers,
                             selectedPeerId: selectedPeerId,
                             onSelect: (peer) => setState(() => selectedPeerId = peer.id),
+                            onRemovePeer: _removePeer,
+                            onClearPeers: _clearPeers,
                           )
                         : ChatPane(
                             service: service,
@@ -363,6 +365,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           peers: peers,
                           selectedPeerId: selectedPeerId,
                           onSelect: (peer) => setState(() => selectedPeerId = peer.id),
+                          onRemovePeer: _removePeer,
+                          onClearPeers: _clearPeers,
                         ),
                       ),
                       const VerticalDivider(width: 1),
@@ -429,6 +433,18 @@ class _HomeScreenState extends State<HomeScreen> {
         onStartAtStartupChanged: widget.onStartAtStartupChanged,
       ),
     );
+  }
+
+  void _removePeer(PeerDevice peer) {
+    service.removePeer(peer.id);
+    if (selectedPeerId == peer.id) {
+      setState(() => selectedPeerId = null);
+    }
+  }
+
+  void _clearPeers() {
+    service.clearPeers();
+    setState(() => selectedPeerId = null);
   }
 }
 
@@ -719,12 +735,16 @@ class PeerList extends StatelessWidget {
     required this.peers,
     required this.selectedPeerId,
     required this.onSelect,
+    required this.onRemovePeer,
+    required this.onClearPeers,
     super.key,
   });
 
   final List<PeerDevice> peers;
   final String? selectedPeerId;
   final ValueChanged<PeerDevice> onSelect;
+  final ValueChanged<PeerDevice> onRemovePeer;
+  final VoidCallback onClearPeers;
 
   @override
   Widget build(BuildContext context) {
@@ -734,10 +754,22 @@ class PeerList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-            child: Text(
-              'Nearby devices',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            padding: const EdgeInsets.fromLTRB(20, 14, 12, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Nearby devices',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                if (peers.isNotEmpty)
+                  IconButton(
+                    tooltip: 'Clear nearby devices',
+                    icon: const Icon(Icons.delete_sweep_outlined),
+                    onPressed: onClearPeers,
+                  ),
+              ],
             ),
           ),
           Expanded(
@@ -756,18 +788,49 @@ class PeerList extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final peer = peers[index];
                       final selected = selectedPeerId == peer.id;
-                      return ListTile(
+                      return GestureDetector(
                         key: ValueKey(peer.id),
-                        selected: selected,
-                        selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        leading: CircleAvatar(
-                          child: Icon(_platformIcon(peer.platform)),
+                        behavior: HitTestBehavior.opaque,
+                        onSecondaryTapDown: (details) => _showPeerMenu(context, peer, details.globalPosition),
+                        onLongPressStart: (details) => _showPeerMenu(context, peer, details.globalPosition),
+                        child: ListTile(
+                          selected: selected,
+                          selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          leading: CircleAvatar(
+                            child: Icon(_platformIcon(peer.platform)),
+                          ),
+                          title: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text('${peer.platformLabel} • ${peer.address.address}'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(peer.isFresh ? Icons.circle : Icons.schedule, size: 14),
+                              PopupMenuButton<String>(
+                                tooltip: 'Device options',
+                                icon: const Icon(Icons.more_vert),
+                                onSelected: (value) {
+                                  if (value == 'delete') {
+                                    onRemovePeer(peer);
+                                  }
+                                },
+                                itemBuilder: (context) => const [
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.delete_outline),
+                                        SizedBox(width: 10),
+                                        Text('Delete'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          onTap: () => onSelect(peer),
                         ),
-                        title: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text('${peer.platformLabel} • ${peer.address.address}'),
-                        trailing: Icon(peer.isFresh ? Icons.circle : Icons.schedule, size: 14),
-                        onTap: () => onSelect(peer),
                       );
                     },
                     separatorBuilder: (_, __) => const SizedBox(height: 4),
@@ -777,6 +840,32 @@ class PeerList extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _showPeerMenu(BuildContext context, PeerDevice peer, Offset position) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final selected = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(position.dx, position.dy, 1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: const [
+        PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline),
+              SizedBox(width: 10),
+              Text('Delete'),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (selected == 'delete') {
+      onRemovePeer(peer);
+    }
   }
 }
 
@@ -1102,6 +1191,7 @@ class LanChatService extends ChangeNotifier {
   final String localName;
   final Map<String, PeerDevice> peers = {};
   final Map<String, List<ChatMessage>> _messages = {};
+  final Set<String> _hiddenPeerIds = {};
   String? _downloadDirectory;
   List<String> _localIPv4AddressText = const [];
   String lastStatus = 'Starting...';
@@ -1304,7 +1394,26 @@ class LanChatService extends ChangeNotifier {
     notifyListeners();
   }
 
+  void removePeer(String peerId) {
+    final peer = peers.remove(peerId);
+    if (peer == null) {
+      return;
+    }
+    _hiddenPeerIds.add(peerId);
+    lastStatus = 'Removed ${peer.name} from nearby devices';
+    notifyListeners();
+  }
+
+  void clearPeers() {
+    final count = peers.length;
+    _hiddenPeerIds.addAll(peers.keys);
+    peers.clear();
+    lastStatus = count == 0 ? 'Nearby devices list is already empty' : 'Cleared $count nearby device(s)';
+    notifyListeners();
+  }
+
   Future<void> refreshNow() async {
+    _hiddenPeerIds.clear();
     final cutoff = DateTime.now().subtract(const Duration(minutes: 2));
     peers.removeWhere((_, peer) => peer.lastSeen.isBefore(cutoff));
 
@@ -1513,6 +1622,9 @@ class LanChatService extends ChangeNotifier {
       }
 
       final id = payload['id'] as String;
+      if (_hiddenPeerIds.contains(id)) {
+        return;
+      }
       final existing = peers[id];
       final updated = PeerDevice(
         id: id,
