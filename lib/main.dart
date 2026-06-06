@@ -1482,7 +1482,14 @@ class LanChatService extends ChangeNotifier {
       final headerBytes = utf8.encode('${jsonEncode(header)}\n');
       socket.add(headerBytes);
       if (body != null) {
-        socket.add(body);
+        const chunkSize = 64 * 1024;
+        for (var offset = 0; offset < body.length; offset += chunkSize) {
+          final end = min(offset + chunkSize, body.length);
+          socket.add(Uint8List.sublistView(body, offset, end));
+          if (offset % (1024 * 1024) == 0) {
+            await socket.flush();
+          }
+        }
       }
       await socket.flush();
     } finally {
@@ -1532,15 +1539,11 @@ class LanChatService extends ChangeNotifier {
   }
 
   Future<void> _handleIncomingSocket(Socket socket) async {
+    File? temporaryBodyFile;
     try {
-      final bytes = await _collectBytes(socket);
-      final split = bytes.indexOf(10);
-      if (split <= 0) {
-        return;
-      }
-
-      final header = jsonDecode(utf8.decode(bytes.sublist(0, split))) as Map<String, dynamic>;
-      final body = bytes.sublist(split + 1);
+      final envelope = await _readIncomingEnvelope(socket);
+      temporaryBodyFile = envelope.bodyFile;
+      final header = envelope.header;
       final fromId = header['fromId'] as String? ?? socket.remoteAddress.address;
       final fromName = header['fromName'] as String? ?? socket.remoteAddress.address;
 
@@ -1574,12 +1577,16 @@ class LanChatService extends ChangeNotifier {
 
       if (header['type'] == 'file') {
         final fileName = _safeFileName(header['fileName'] as String? ?? 'received-file');
+        final bodyFile = envelope.bodyFile;
+        if (bodyFile == null) {
+          throw const FileSystemException('Missing received file body');
+        }
         final incomingDir = await _incomingDirectory();
         if (!await incomingDir.exists()) {
           await incomingDir.create(recursive: true);
         }
         final file = File('${incomingDir.path}${Platform.pathSeparator}${DateTime.now().millisecondsSinceEpoch}-$fileName');
-        await file.writeAsBytes(body);
+        await bodyFile.copy(file.path);
 
         _messages.putIfAbsent(fromId, () => []).add(
               ChatMessage(
@@ -1599,6 +1606,10 @@ class LanChatService extends ChangeNotifier {
 
       if (header['type'] == 'folder') {
         final folderName = _safeFileName(header['folderName'] as String? ?? 'received-folder');
+        final bodyFile = envelope.bodyFile;
+        if (bodyFile == null) {
+          throw const FileSystemException('Missing received folder body');
+        }
         final incomingDir = await _incomingDirectory();
         if (!await incomingDir.exists()) {
           await incomingDir.create(recursive: true);
@@ -1606,7 +1617,7 @@ class LanChatService extends ChangeNotifier {
         final folder = Directory(
           '${incomingDir.path}${Platform.pathSeparator}${DateTime.now().millisecondsSinceEpoch}-$folderName',
         );
-        await _extractFolderArchive(body, folder);
+        await _extractFolderArchive(bodyFile, folder);
 
         _messages.putIfAbsent(fromId, () => []).add(
               ChatMessage(
@@ -1629,6 +1640,11 @@ class LanChatService extends ChangeNotifier {
       lastStatus = 'Ignored dropped connection: ${_shortError(error)}';
       notifyListeners();
     } finally {
+      try {
+        await temporaryBodyFile?.delete();
+      } catch (_) {
+        // Temporary transfer cleanup can be skipped if the OS already removed it.
+      }
       socket.destroy();
     }
   }
@@ -1665,22 +1681,27 @@ class LanChatService extends ChangeNotifier {
     return Uint8List.fromList(encoded);
   }
 
-  Future<void> _extractFolderArchive(Uint8List bytes, Directory folder) async {
+  Future<void> _extractFolderArchive(File zipFile, Directory folder) async {
     await folder.create(recursive: true);
-    final archive = ZipDecoder().decodeBytes(bytes);
-    for (final entry in archive.files) {
-      final relativePath = _safeArchiveEntryPath(entry.name);
-      if (relativePath == null) {
-        continue;
+    final input = InputFileStream(zipFile.path);
+    try {
+      final archive = ZipDecoder().decodeStream(input);
+      for (final entry in archive.files) {
+        final relativePath = _safeArchiveEntryPath(entry.name);
+        if (relativePath == null) {
+          continue;
+        }
+        final path = '${folder.path}${Platform.pathSeparator}$relativePath';
+        if (entry.isDirectory) {
+          await Directory(path).create(recursive: true);
+        } else if (entry.isFile) {
+          final file = File(path);
+          await file.parent.create(recursive: true);
+          await file.writeAsBytes(entry.content);
+        }
       }
-      final path = '${folder.path}${Platform.pathSeparator}$relativePath';
-      if (entry.isDirectory) {
-        await Directory(path).create(recursive: true);
-      } else if (entry.isFile) {
-        final file = File(path);
-        await file.parent.create(recursive: true);
-        await file.writeAsBytes(entry.content);
-      }
+    } finally {
+      await input.close();
     }
   }
 
@@ -1698,12 +1719,63 @@ class LanChatService extends ChangeNotifier {
     return targets.map(InternetAddress.new).toList(growable: false);
   }
 
-  Future<Uint8List> _collectBytes(Socket socket) async {
-    final builder = BytesBuilder(copy: false);
+  Future<IncomingEnvelope> _readIncomingEnvelope(Socket socket) async {
+    final headerBuilder = BytesBuilder(copy: false);
+    Map<String, dynamic>? header;
+    File? bodyFile;
+    IOSink? bodySink;
+    var expectedBodyLength = 0;
+    var receivedBodyLength = 0;
+
     await for (final chunk in socket) {
-      builder.add(chunk);
+      var bodyStart = 0;
+      if (header == null) {
+        final split = chunk.indexOf(10);
+        if (split < 0) {
+          headerBuilder.add(chunk);
+          continue;
+        }
+
+        if (split > 0) {
+          headerBuilder.add(Uint8List.sublistView(chunk, 0, split));
+        }
+        header = jsonDecode(utf8.decode(headerBuilder.takeBytes())) as Map<String, dynamic>;
+        expectedBodyLength = header['byteLength'] as int? ?? 0;
+        if (expectedBodyLength > 0) {
+          bodyFile = await _createTransferTempFile();
+          bodySink = bodyFile.openWrite();
+        }
+        bodyStart = split + 1;
+      }
+
+      final sink = bodySink;
+      if (sink != null && bodyStart < chunk.length) {
+        final data = Uint8List.sublistView(chunk, bodyStart);
+        sink.add(data);
+        receivedBodyLength += data.length;
+      }
     }
-    return builder.takeBytes();
+
+    await bodySink?.flush();
+    await bodySink?.close();
+
+    final parsedHeader = header;
+    if (parsedHeader == null) {
+      throw const FormatException('Missing transfer header');
+    }
+    if (expectedBodyLength > 0 && receivedBodyLength != expectedBodyLength) {
+      throw FormatException('Incomplete transfer: received $receivedBodyLength of $expectedBodyLength bytes');
+    }
+    return IncomingEnvelope(header: parsedHeader, bodyFile: bodyFile);
+  }
+
+  Future<File> _createTransferTempFile() async {
+    final directory = await getTemporaryDirectory();
+    final transferDir = Directory('${directory.path}${Platform.pathSeparator}WifiChatShareTransfers');
+    if (!await transferDir.exists()) {
+      await transferDir.create(recursive: true);
+    }
+    return File('${transferDir.path}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}-${_makeId()}.bin');
   }
 
   void _removeStalePeers() {
@@ -2066,6 +2138,13 @@ class ChatMessage {
   final DateTime createdAt;
   final String? fileName;
   final String? filePath;
+}
+
+class IncomingEnvelope {
+  const IncomingEnvelope({required this.header, required this.bodyFile});
+
+  final Map<String, dynamic> header;
+  final File? bodyFile;
 }
 
 IconData _platformIcon(String platform) {
