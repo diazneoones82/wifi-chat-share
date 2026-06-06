@@ -2093,6 +2093,7 @@ class WindowsStartupService {
 
   static const String _runKey = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run';
   static const String _valueName = 'WifiChatShare';
+  static const String _startupFileName = 'WifiChatShare.cmd';
 
   Future<bool> setEnabled(bool value) async {
     if (!Platform.isWindows) {
@@ -2101,32 +2102,56 @@ class WindowsStartupService {
 
     try {
       if (value) {
+        await _deleteLegacyRegistryStartup();
+        final startupFile = await _startupFile();
+        await startupFile.parent.create(recursive: true);
         final executable = Platform.resolvedExecutable;
-        final result = await Process.run('reg', [
-          'add',
-          _runKey,
-          '/v',
-          _valueName,
-          '/t',
-          'REG_SZ',
-          '/d',
-          '"$executable"',
-          '/f',
-        ]);
-        return result.exitCode == 0;
+        await startupFile.writeAsString(
+          '@echo off\r\nstart "" "${_escapeCmdPath(executable)}"\r\n',
+          flush: true,
+        );
+        return startupFile.existsSync();
       }
 
-      final result = await Process.run('reg', [
+      final startupFile = await _startupFile();
+      if (await startupFile.exists()) {
+        await startupFile.delete();
+      }
+      await _deleteLegacyRegistryStartup();
+      return !startupFile.existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<File> _startupFile() async {
+    final appData = Platform.environment['APPDATA'];
+    if (appData == null || appData.trim().isEmpty) {
+      throw const FileSystemException('APPDATA is not available');
+    }
+    return File(
+      '$appData${Platform.pathSeparator}Microsoft${Platform.pathSeparator}Windows'
+      '${Platform.pathSeparator}Start Menu${Platform.pathSeparator}Programs'
+      '${Platform.pathSeparator}Startup${Platform.pathSeparator}$_startupFileName',
+    );
+  }
+
+  Future<void> _deleteLegacyRegistryStartup() async {
+    try {
+      await Process.run('reg.exe', [
         'delete',
         _runKey,
         '/v',
         _valueName,
         '/f',
       ]);
-      return result.exitCode == 0 || result.exitCode == 1;
     } catch (_) {
-      return false;
+      return;
     }
+  }
+
+  String _escapeCmdPath(String value) {
+    return value.replaceAll('"', '""');
   }
 }
 

@@ -97,7 +97,7 @@ Open the gear icon in the app:
 
 - Theme: choose Light, Dark, or Matrix. Matrix uses a green-on-black binary-code background with a terminal-style interface.
 - Notifications: enables popup notifications for received messages and files.
-- Start with Windows: opens Wifi Chat Share automatically when the current Windows user signs in.
+- Start with Windows: creates a current-user Startup launcher so Wifi Chat Share opens automatically when you sign in.
 - Allow firewall: runs the Windows firewall setup helper. This requires Administrator/UAC approval because it creates inbound firewall rules.
 - Test peer port: runs the TCP `45873` port test helper. This does not need Administrator permission.
 - Received files location: choose the download/save folder.
@@ -112,6 +112,7 @@ Use the paperclip button to send single files, including images, ZIP files, Word
 The Windows app keeps running when minimized and moves to the taskbar tray/notification area.
 
 - Click Minimize to hide the app window while discovery, chat, and file receiving continue.
+- Click Close to hide the app window to the tray while discovery, chat, and file receiving continue.
 - Double-click the tray icon to show the app again.
 - Right-click the tray icon for:
   - Show Wifi Chat Share
@@ -125,7 +126,7 @@ Use Exit from the tray menu when you want to fully close the background app.
 
 On Windows, open Settings and enable Start with Windows if you want Wifi Chat Share to start automatically after sign-in.
 
-This uses the current user's Windows startup registry entry, so it does not need Administrator permission. If you move the portable app folder to a different location, turn Start with Windows off and back on so Windows stores the new executable path.
+This creates a launcher in the current user's Windows Startup folder, so it does not need Administrator permission. If you move the portable app folder to a different location, turn Start with Windows off and back on so Windows stores the new executable path.
 
 ### Windows Troubleshooting
 

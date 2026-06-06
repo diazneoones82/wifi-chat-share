@@ -122,6 +122,12 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   switch (message) {
+    case WM_CLOSE:
+      if (!exit_requested_) {
+        ShowWindow(hwnd, SW_HIDE);
+        return 0;
+      }
+      break;
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
@@ -242,6 +248,7 @@ void FlutterWindow::HandleTrayCommand(HWND hwnd, int command_id) {
       }
       return;
     case kTrayExitCommand:
+      exit_requested_ = true;
       RemoveTrayIcon();
       DestroyWindow(hwnd);
       return;
