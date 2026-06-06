@@ -644,82 +644,33 @@ class MatrixBackdrop extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        const Positioned.fill(
-          child: CustomPaint(painter: MatrixRainPainter()),
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/matrix_background.jpg',
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+          ),
         ),
         Positioned.fill(
-          child: Container(color: matrixBlack.withAlpha(178)),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: matrixBlack.withAlpha(160),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  matrixBlack.withAlpha(105),
+                  matrixBlack.withAlpha(170),
+                  matrixBlack.withAlpha(225),
+                ],
+              ),
+            ),
+          ),
         ),
         child,
       ],
     );
   }
-}
-
-class MatrixRainPainter extends CustomPainter {
-  const MatrixRainPainter();
-
-  static const List<String> _glyphs = ['0', '1'];
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final background = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          matrixBlack,
-          Color(0xff031509),
-          matrixBlack,
-        ],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, background);
-
-    final glowPaint = Paint()
-      ..color = matrixGreen.withAlpha(20)
-      ..strokeWidth = 1;
-    const columnWidth = 22.0;
-    const rowHeight = 18.0;
-    for (var x = 0.0; x < size.width; x += columnWidth) {
-      canvas.drawLine(Offset(x, 0), Offset(x + size.height * 0.12, size.height), glowPaint);
-    }
-
-    final columns = (size.width / columnWidth).ceil() + 1;
-    final rows = (size.height / rowHeight).ceil() + 1;
-    for (var column = 0; column < columns; column++) {
-      final phase = (column * 7) % 17;
-      for (var row = 0; row < rows; row++) {
-        final value = _glyphs[(column + row + phase) % _glyphs.length];
-        final alpha = 28 + ((row + phase) % 7) * 10;
-        final painter = TextPainter(
-          text: TextSpan(
-            text: value,
-            style: TextStyle(
-              color: matrixGreen.withAlpha(alpha.clamp(28, 96)),
-              fontFamily: 'monospace',
-              fontSize: 13,
-              fontWeight: (row + phase) % 11 == 0 ? FontWeight.w700 : FontWeight.w400,
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        final yOffset = ((row * rowHeight) + (phase * 5)) % (size.height + rowHeight) - rowHeight;
-        painter.paint(canvas, Offset(column * columnWidth, yOffset));
-      }
-    }
-
-    final vignette = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          Colors.transparent,
-          matrixBlack.withAlpha(210),
-        ],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, vignette);
-  }
-
-  @override
-  bool shouldRepaint(covariant MatrixRainPainter oldDelegate) => false;
 }
 
 class StatusBar extends StatelessWidget {

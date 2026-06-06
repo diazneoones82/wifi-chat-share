@@ -90,7 +90,7 @@ The script allows inbound UDP `45872` and TCP `45873`.
 
 Open the gear icon in the app:
 
-- Theme: choose Light, Dark, or Matrix. Matrix uses a green-on-black binary-code interface inspired by futuristic communication backdrops.
+- Theme: choose Light, Dark, or Matrix. Matrix uses a green-on-black binary-code background with a terminal-style interface.
 - Notifications: enables popup notifications for received messages and files.
 - Start with Windows: opens Wifi Chat Share automatically when the current Windows user signs in.
 - Allow firewall: runs the Windows firewall setup helper. This requires Administrator/UAC approval because it creates inbound firewall rules.
