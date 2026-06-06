@@ -888,6 +888,7 @@ class ChatPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final messages = service.messagesFor(peer.id);
+    final transfers = service.transfersFor(peer.id);
 
     return Column(
       children: [
@@ -924,6 +925,7 @@ class ChatPane extends StatelessWidget {
           ),
         ),
         const Divider(height: 1),
+        if (transfers.isNotEmpty) TransferProgressList(transfers: transfers),
         Expanded(
           child: messages.isEmpty
               ? const Center(child: Text('Send a message or attach a file.'))
@@ -992,6 +994,79 @@ class ChatPane extends StatelessWidget {
     if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       focusNode.requestFocus();
     }
+  }
+}
+
+class TransferProgressList extends StatelessWidget {
+  const TransferProgressList({required this.transfers, super.key});
+
+  final List<TransferProgress> transfers;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow.withAlpha(235),
+        border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
+      ),
+      child: Column(
+        children: transfers
+            .map(
+              (transfer) => Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                child: Row(
+                  children: [
+                    Icon(
+                      transfer.kind == MessageKind.folder
+                          ? Icons.folder_outlined
+                          : Icons.insert_drive_file_outlined,
+                      color: colorScheme.primary,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${transfer.direction.label} ${transfer.name}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                '${transfer.percent}%',
+                                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                      color: colorScheme.primary,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          LinearProgressIndicator(
+                            value: transfer.fraction,
+                            minHeight: 7,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+            .toList(growable: false),
+      ),
+    );
   }
 }
 
@@ -1191,6 +1266,7 @@ class LanChatService extends ChangeNotifier {
   final String localName;
   final Map<String, PeerDevice> peers = {};
   final Map<String, List<ChatMessage>> _messages = {};
+  final Map<String, TransferProgress> _transfers = {};
   final Set<String> _hiddenPeerIds = {};
   String? _downloadDirectory;
   List<String> _localIPv4AddressText = const [];
@@ -1388,6 +1464,12 @@ class LanChatService extends ChangeNotifier {
 
   List<ChatMessage> messagesFor(String peerId) => List.unmodifiable(_messages[peerId] ?? const []);
 
+  List<TransferProgress> transfersFor(String peerId) {
+    final values = _transfers.values.where((transfer) => transfer.peerId == peerId).toList(growable: false)
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return List.unmodifiable(values);
+  }
+
   void setDownloadDirectory(String? path) {
     _downloadDirectory = path;
     lastStatus = path == null ? 'Received files will save to Documents' : 'Received files will save to $path';
@@ -1410,6 +1492,66 @@ class LanChatService extends ChangeNotifier {
     peers.clear();
     lastStatus = count == 0 ? 'Nearby devices list is already empty' : 'Cleared $count nearby device(s)';
     notifyListeners();
+  }
+
+  void _beginTransfer({
+    required String id,
+    required String peerId,
+    required String name,
+    required MessageKind kind,
+    required TransferDirection direction,
+    required int totalBytes,
+  }) {
+    if (totalBytes <= 0) {
+      return;
+    }
+    _transfers[id] = TransferProgress(
+      id: id,
+      peerId: peerId,
+      name: name,
+      kind: kind,
+      direction: direction,
+      totalBytes: totalBytes,
+      transferredBytes: 0,
+      createdAt: DateTime.now(),
+    );
+    notifyListeners();
+  }
+
+  void _updateTransfer(String id, int transferredBytes) {
+    final transfer = _transfers[id];
+    if (transfer == null) {
+      return;
+    }
+    final boundedBytes = transferredBytes.clamp(0, transfer.totalBytes);
+    final nextPercent = _percentForBytes(boundedBytes, transfer.totalBytes);
+    if (nextPercent == transfer.percent && boundedBytes < transfer.totalBytes) {
+      return;
+    }
+    _transfers[id] = transfer.copyWith(transferredBytes: boundedBytes);
+    notifyListeners();
+  }
+
+  void _completeTransfer(String id) {
+    final transfer = _transfers[id];
+    if (transfer == null) {
+      return;
+    }
+    _transfers[id] = transfer.copyWith(transferredBytes: transfer.totalBytes);
+    notifyListeners();
+    Timer(const Duration(seconds: 2), () {
+      if (_disposed) {
+        return;
+      }
+      _transfers.remove(id);
+      notifyListeners();
+    });
+  }
+
+  void _failTransfer(String id) {
+    if (_transfers.remove(id) != null) {
+      notifyListeners();
+    }
   }
 
   Future<void> refreshNow() async {
@@ -1504,6 +1646,14 @@ class LanChatService extends ChangeNotifier {
     notifyListeners();
 
     try {
+      _beginTransfer(
+        id: message.id,
+        peerId: peer.id,
+        name: name,
+        kind: MessageKind.file,
+        direction: TransferDirection.sending,
+        totalBytes: bytes.length,
+      );
       await _sendEnvelope(
         peer,
         {
@@ -1515,11 +1665,14 @@ class LanChatService extends ChangeNotifier {
           'byteLength': bytes.length,
           'createdAt': message.createdAt.toIso8601String(),
         },
-        bytes,
+        body: bytes,
+        onProgress: (sentBytes, _) => _updateTransfer(message.id, sentBytes),
       );
+      _completeTransfer(message.id);
       lastStatus = 'File sent to ${peer.name}: $name';
       notifyListeners();
     } catch (error) {
+      _failTransfer(message.id);
       broadcastNow();
       _messages[peer.id]?.add(
         ChatMessage(
@@ -1553,6 +1706,14 @@ class LanChatService extends ChangeNotifier {
 
     try {
       final bytes = await _zipDirectory(directory);
+      _beginTransfer(
+        id: message.id,
+        peerId: peer.id,
+        name: name,
+        kind: MessageKind.folder,
+        direction: TransferDirection.sending,
+        totalBytes: bytes.length,
+      );
       await _sendEnvelope(
         peer,
         {
@@ -1564,11 +1725,14 @@ class LanChatService extends ChangeNotifier {
           'byteLength': bytes.length,
           'createdAt': message.createdAt.toIso8601String(),
         },
-        bytes,
+        body: bytes,
+        onProgress: (sentBytes, _) => _updateTransfer(message.id, sentBytes),
       );
+      _completeTransfer(message.id);
       lastStatus = 'Folder sent to ${peer.name}: $name';
       notifyListeners();
     } catch (error) {
+      _failTransfer(message.id);
       broadcastNow();
       _messages[peer.id]?.add(
         ChatMessage(
@@ -1585,7 +1749,12 @@ class LanChatService extends ChangeNotifier {
     }
   }
 
-  Future<void> _sendEnvelope(PeerDevice peer, Map<String, Object?> header, [Uint8List? body]) async {
+  Future<void> _sendEnvelope(
+    PeerDevice peer,
+    Map<String, Object?> header, {
+    Uint8List? body,
+    void Function(int transferredBytes, int totalBytes)? onProgress,
+  }) async {
     final socket = await Socket.connect(peer.address, peer.port, timeout: const Duration(seconds: 8));
     try {
       final headerBytes = utf8.encode('${jsonEncode(header)}\n');
@@ -1595,6 +1764,7 @@ class LanChatService extends ChangeNotifier {
         for (var offset = 0; offset < body.length; offset += chunkSize) {
           final end = min(offset + chunkSize, body.length);
           socket.add(Uint8List.sublistView(body, offset, end));
+          onProgress?.call(end, body.length);
           if (offset % (1024 * 1024) == 0) {
             await socket.flush();
           }
@@ -1838,47 +2008,79 @@ class LanChatService extends ChangeNotifier {
     IOSink? bodySink;
     var expectedBodyLength = 0;
     var receivedBodyLength = 0;
+    String? transferId;
 
-    await for (final chunk in socket) {
-      var bodyStart = 0;
-      if (header == null) {
-        final split = chunk.indexOf(10);
-        if (split < 0) {
-          headerBuilder.add(chunk);
-          continue;
+    try {
+      await for (final chunk in socket) {
+        var bodyStart = 0;
+        if (header == null) {
+          final split = chunk.indexOf(10);
+          if (split < 0) {
+            headerBuilder.add(chunk);
+            continue;
+          }
+
+          if (split > 0) {
+            headerBuilder.add(Uint8List.sublistView(chunk, 0, split));
+          }
+          header = jsonDecode(utf8.decode(headerBuilder.takeBytes())) as Map<String, dynamic>;
+          expectedBodyLength = header['byteLength'] as int? ?? 0;
+          if (expectedBodyLength > 0) {
+            final type = header['type'] as String?;
+            final peerId = header['fromId'] as String? ?? socket.remoteAddress.address;
+            final name = type == 'folder'
+                ? _safeFileName(header['folderName'] as String? ?? 'received-folder')
+                : _safeFileName(header['fileName'] as String? ?? 'received-file');
+            final kind = type == 'folder' ? MessageKind.folder : MessageKind.file;
+            transferId = header['id'] as String? ?? _makeId();
+            _beginTransfer(
+              id: transferId,
+              peerId: peerId,
+              name: name,
+              kind: kind,
+              direction: TransferDirection.receiving,
+              totalBytes: expectedBodyLength,
+            );
+            bodyFile = await _createTransferTempFile();
+            bodySink = bodyFile.openWrite();
+          }
+          bodyStart = split + 1;
         }
 
-        if (split > 0) {
-          headerBuilder.add(Uint8List.sublistView(chunk, 0, split));
+        final sink = bodySink;
+        if (sink != null && bodyStart < chunk.length) {
+          final data = Uint8List.sublistView(chunk, bodyStart);
+          sink.add(data);
+          receivedBodyLength += data.length;
+          final id = transferId;
+          if (id != null) {
+            _updateTransfer(id, receivedBodyLength);
+          }
         }
-        header = jsonDecode(utf8.decode(headerBuilder.takeBytes())) as Map<String, dynamic>;
-        expectedBodyLength = header['byteLength'] as int? ?? 0;
-        if (expectedBodyLength > 0) {
-          bodyFile = await _createTransferTempFile();
-          bodySink = bodyFile.openWrite();
-        }
-        bodyStart = split + 1;
       }
 
-      final sink = bodySink;
-      if (sink != null && bodyStart < chunk.length) {
-        final data = Uint8List.sublistView(chunk, bodyStart);
-        sink.add(data);
-        receivedBodyLength += data.length;
+      await bodySink?.flush();
+      await bodySink?.close();
+
+      final parsedHeader = header;
+      if (parsedHeader == null) {
+        throw const FormatException('Missing transfer header');
       }
+      if (expectedBodyLength > 0 && receivedBodyLength != expectedBodyLength) {
+        throw FormatException('Incomplete transfer: received $receivedBodyLength of $expectedBodyLength bytes');
+      }
+      final id = transferId;
+      if (id != null) {
+        _completeTransfer(id);
+      }
+      return IncomingEnvelope(header: parsedHeader, bodyFile: bodyFile);
+    } catch (_) {
+      final id = transferId;
+      if (id != null) {
+        _failTransfer(id);
+      }
+      rethrow;
     }
-
-    await bodySink?.flush();
-    await bodySink?.close();
-
-    final parsedHeader = header;
-    if (parsedHeader == null) {
-      throw const FormatException('Missing transfer header');
-    }
-    if (expectedBodyLength > 0 && receivedBodyLength != expectedBodyLength) {
-      throw FormatException('Incomplete transfer: received $receivedBodyLength of $expectedBodyLength bytes');
-    }
-    return IncomingEnvelope(header: parsedHeader, bodyFile: bodyFile);
   }
 
   Future<File> _createTransferTempFile() async {
@@ -2255,6 +2457,15 @@ class PeerDevice {
 
 enum MessageKind { text, file, folder, system }
 
+enum TransferDirection {
+  sending('Sending'),
+  receiving('Receiving');
+
+  const TransferDirection(this.label);
+
+  final String label;
+}
+
 class ChatMessage {
   const ChatMessage({
     required this.id,
@@ -2282,6 +2493,50 @@ class IncomingEnvelope {
 
   final Map<String, dynamic> header;
   final File? bodyFile;
+}
+
+class TransferProgress {
+  const TransferProgress({
+    required this.id,
+    required this.peerId,
+    required this.name,
+    required this.kind,
+    required this.direction,
+    required this.totalBytes,
+    required this.transferredBytes,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String peerId;
+  final String name;
+  final MessageKind kind;
+  final TransferDirection direction;
+  final int totalBytes;
+  final int transferredBytes;
+  final DateTime createdAt;
+
+  int get percent => _percentForBytes(transferredBytes, totalBytes);
+
+  double get fraction {
+    if (totalBytes <= 0) {
+      return 0;
+    }
+    return (transferredBytes / totalBytes).clamp(0, 1).toDouble();
+  }
+
+  TransferProgress copyWith({int? transferredBytes}) {
+    return TransferProgress(
+      id: id,
+      peerId: peerId,
+      name: name,
+      kind: kind,
+      direction: direction,
+      totalBytes: totalBytes,
+      transferredBytes: transferredBytes ?? this.transferredBytes,
+      createdAt: createdAt,
+    );
+  }
 }
 
 IconData _platformIcon(String platform) {
@@ -2351,6 +2606,13 @@ String _shortError(Object error) {
     return text;
   }
   return '${text.substring(0, 137)}...';
+}
+
+int _percentForBytes(int transferredBytes, int totalBytes) {
+  if (totalBytes <= 0) {
+    return 0;
+  }
+  return ((transferredBytes / totalBytes) * 100).clamp(0, 100).round();
 }
 
 String _makeId() {

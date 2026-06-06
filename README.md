@@ -11,6 +11,7 @@ No cloud server is used. Every device that should appear in the list must have W
 - Copy sent or received message text from the chat bubbles
 - Share pictures, videos, ZIP archives, Microsoft Office files, documents, installers, and any other file format
 - Share whole folders; Wifi Chat Share packages the selected folder internally and restores it as a folder on the receiving device
+- File and folder transfers show live progress bars with percentage while sending or receiving
 - Received-file save location selector on desktop
 - Default received-file location under Documents/app storage when no folder is selected
 - Light, dark, and Matrix theme options
