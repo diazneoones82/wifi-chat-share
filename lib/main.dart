@@ -15,6 +15,151 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const int discoveryPort = 45872;
 const int transferPort = 45873;
+const Color matrixGreen = Color(0xff00ff66);
+const Color matrixDeepGreen = Color(0xff003b1f);
+const Color matrixBlack = Color(0xff020403);
+
+enum AppVisualTheme { light, dark, matrix }
+
+extension AppVisualThemeX on AppVisualTheme {
+  String get storageValue {
+    switch (this) {
+      case AppVisualTheme.light:
+        return 'light';
+      case AppVisualTheme.dark:
+        return 'dark';
+      case AppVisualTheme.matrix:
+        return 'matrix';
+    }
+  }
+
+  static AppVisualTheme? fromStorage(String? value) {
+    switch (value) {
+      case 'light':
+        return AppVisualTheme.light;
+      case 'dark':
+        return AppVisualTheme.dark;
+      case 'matrix':
+        return AppVisualTheme.matrix;
+      default:
+        return null;
+    }
+  }
+}
+
+ThemeData _themeFor(AppVisualTheme visualTheme) {
+  switch (visualTheme) {
+    case AppVisualTheme.light:
+      return _lightTheme();
+    case AppVisualTheme.dark:
+      return _darkTheme();
+    case AppVisualTheme.matrix:
+      return _matrixTheme();
+  }
+}
+
+ThemeData _lightTheme() {
+  return ThemeData(
+    colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff0f766e)),
+    useMaterial3: true,
+    visualDensity: VisualDensity.standard,
+  );
+}
+
+ThemeData _darkTheme() {
+  return ThemeData(
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: const Color(0xff14b8a6),
+      brightness: Brightness.dark,
+    ),
+    useMaterial3: true,
+    visualDensity: VisualDensity.standard,
+  );
+}
+
+ThemeData _matrixTheme() {
+  final colorScheme = ColorScheme.fromSeed(
+    seedColor: matrixGreen,
+    brightness: Brightness.dark,
+  ).copyWith(
+    primary: matrixGreen,
+    onPrimary: matrixBlack,
+    primaryContainer: const Color(0xff053f21),
+    onPrimaryContainer: const Color(0xffd9ffe6),
+    secondary: const Color(0xff7cffaa),
+    onSecondary: matrixBlack,
+    secondaryContainer: const Color(0xff072d19),
+    onSecondaryContainer: const Color(0xffc9ffdc),
+    surface: const Color(0xff050806),
+    onSurface: const Color(0xffd8ffe4),
+    surfaceContainerLowest: const Color(0xff020403),
+    surfaceContainerLow: const Color(0xff07110a),
+    surfaceContainer: const Color(0xff0a160d),
+    surfaceContainerHigh: const Color(0xff0d1f12),
+    surfaceContainerHighest: const Color(0xff112818),
+    onSurfaceVariant: const Color(0xffa3e8b8),
+    outline: const Color(0xff1ee877),
+    outlineVariant: const Color(0xff175b32),
+    error: const Color(0xffff6b6b),
+    onError: matrixBlack,
+    errorContainer: const Color(0xff4a0909),
+    onErrorContainer: const Color(0xffffd7d7),
+  );
+
+  final base = ThemeData(
+    colorScheme: colorScheme,
+    scaffoldBackgroundColor: matrixBlack,
+    useMaterial3: true,
+    visualDensity: VisualDensity.standard,
+    fontFamily: 'monospace',
+  );
+
+  return base.copyWith(
+    appBarTheme: AppBarTheme(
+      backgroundColor: matrixBlack.withAlpha(235),
+      foregroundColor: matrixGreen,
+      elevation: 0,
+      surfaceTintColor: Colors.transparent,
+      titleTextStyle: base.textTheme.titleLarge?.copyWith(
+        color: matrixGreen,
+        fontWeight: FontWeight.w800,
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: const Color(0xff061008),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: Color(0xff1ee877)),
+      ),
+    ),
+    dividerTheme: const DividerThemeData(color: Color(0xff175b32)),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: const Color(0xff061008),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xff1ee877)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xff175b32)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: matrixGreen, width: 1.5),
+      ),
+    ),
+    listTileTheme: const ListTileThemeData(
+      iconColor: matrixGreen,
+      textColor: Color(0xffd8ffe4),
+    ),
+    snackBarTheme: const SnackBarThemeData(
+      backgroundColor: Color(0xff062d17),
+      contentTextStyle: TextStyle(color: Color(0xffd8ffe4)),
+    ),
+  );
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,7 +175,7 @@ class WifiChatShareApp extends StatefulWidget {
 }
 
 class _WifiChatShareAppState extends State<WifiChatShareApp> {
-  bool darkMode = false;
+  AppVisualTheme visualTheme = AppVisualTheme.light;
   bool notificationsEnabled = true;
   bool startAtStartup = false;
   String? downloadDirectory;
@@ -47,7 +192,9 @@ class _WifiChatShareAppState extends State<WifiChatShareApp> {
       return;
     }
     setState(() {
-      darkMode = prefs.getBool('darkMode') ?? false;
+      final savedTheme = prefs.getString('visualTheme');
+      visualTheme = AppVisualThemeX.fromStorage(savedTheme) ??
+          ((prefs.getBool('darkMode') ?? false) ? AppVisualTheme.dark : AppVisualTheme.light);
       notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
       startAtStartup = prefs.getBool('startAtStartup') ?? false;
       downloadDirectory = prefs.getString('downloadDirectory');
@@ -58,10 +205,11 @@ class _WifiChatShareAppState extends State<WifiChatShareApp> {
     }
   }
 
-  Future<void> _setDarkMode(bool value) async {
+  Future<void> _setVisualTheme(AppVisualTheme value) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('darkMode', value);
-    setState(() => darkMode = value);
+    await prefs.setString('visualTheme', value.storageValue);
+    await prefs.setBool('darkMode', value == AppVisualTheme.dark || value == AppVisualTheme.matrix);
+    setState(() => visualTheme = value);
   }
 
   Future<void> _setDownloadDirectory(String? path) async {
@@ -94,29 +242,18 @@ class _WifiChatShareAppState extends State<WifiChatShareApp> {
 
   @override
   Widget build(BuildContext context) {
+    final activeTheme = _themeFor(visualTheme);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Wifi Chat Share',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff0f766e)),
-        useMaterial3: true,
-        visualDensity: VisualDensity.standard,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xff14b8a6),
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-        visualDensity: VisualDensity.standard,
-      ),
-      themeMode: darkMode ? ThemeMode.dark : ThemeMode.light,
+      theme: activeTheme,
+      themeMode: ThemeMode.light,
       home: HomeScreen(
-        darkMode: darkMode,
+        visualTheme: visualTheme,
         downloadDirectory: downloadDirectory,
         notificationsEnabled: notificationsEnabled,
         startAtStartup: startAtStartup,
-        onDarkModeChanged: _setDarkMode,
+        onVisualThemeChanged: _setVisualTheme,
         onDownloadDirectoryChanged: _setDownloadDirectory,
         onNotificationsChanged: _setNotificationsEnabled,
         onStartAtStartupChanged: _setStartAtStartup,
@@ -127,22 +264,22 @@ class _WifiChatShareAppState extends State<WifiChatShareApp> {
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
-    required this.darkMode,
+    required this.visualTheme,
     required this.downloadDirectory,
     required this.notificationsEnabled,
     required this.startAtStartup,
-    required this.onDarkModeChanged,
+    required this.onVisualThemeChanged,
     required this.onDownloadDirectoryChanged,
     required this.onNotificationsChanged,
     required this.onStartAtStartupChanged,
     super.key,
   });
 
-  final bool darkMode;
+  final AppVisualTheme visualTheme;
   final String? downloadDirectory;
   final bool notificationsEnabled;
   final bool startAtStartup;
-  final ValueChanged<bool> onDarkModeChanged;
+  final ValueChanged<AppVisualTheme> onVisualThemeChanged;
   final ValueChanged<String?> onDownloadDirectoryChanged;
   final ValueChanged<bool> onNotificationsChanged;
   final ValueChanged<bool> onStartAtStartupChanged;
@@ -188,6 +325,68 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context, _) {
         final peers = service.visiblePeers;
         final selectedPeer = selectedPeerId == null ? null : service.peers[selectedPeerId];
+        final body = LayoutBuilder(
+          builder: (context, constraints) {
+            final isCompact = constraints.maxWidth < 760;
+            if (isCompact) {
+              return Column(
+                children: [
+                  StatusBar(text: service.lastStatus, networkText: service.pingAddressLabel),
+                  Expanded(
+                    child: selectedPeer == null
+                        ? PeerList(
+                            peers: peers,
+                            selectedPeerId: selectedPeerId,
+                            onSelect: (peer) => setState(() => selectedPeerId = peer.id),
+                          )
+                        : ChatPane(
+                            service: service,
+                            peer: selectedPeer,
+                            controller: messageController,
+                            focusNode: messageFocusNode,
+                            onBack: () => setState(() => selectedPeerId = null),
+                          ),
+                  ),
+                ],
+              );
+            }
+
+            return Column(
+              children: [
+                StatusBar(text: service.lastStatus, networkText: service.pingAddressLabel),
+                Expanded(
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 330,
+                        child: PeerList(
+                          peers: peers,
+                          selectedPeerId: selectedPeerId,
+                          onSelect: (peer) => setState(() => selectedPeerId = peer.id),
+                        ),
+                      ),
+                      const VerticalDivider(width: 1),
+                      Expanded(
+                        child: selectedPeer == null
+                            ? EmptyState(
+                                isRunning: service.isRunning,
+                                deviceName: service.localName,
+                                pingAddressLabel: service.pingAddressLabel,
+                              )
+                            : ChatPane(
+                                service: service,
+                                peer: selectedPeer,
+                                controller: messageController,
+                                focusNode: messageFocusNode,
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        );
 
         return Scaffold(
           appBar: AppBar(
@@ -210,68 +409,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          body: LayoutBuilder(
-            builder: (context, constraints) {
-              final isCompact = constraints.maxWidth < 760;
-              if (isCompact) {
-                return Column(
-                  children: [
-                    StatusBar(text: service.lastStatus, networkText: service.pingAddressLabel),
-                    Expanded(
-                      child: selectedPeer == null
-                          ? PeerList(
-                              peers: peers,
-                              selectedPeerId: selectedPeerId,
-                              onSelect: (peer) => setState(() => selectedPeerId = peer.id),
-                            )
-                          : ChatPane(
-                              service: service,
-                              peer: selectedPeer,
-                              controller: messageController,
-                              focusNode: messageFocusNode,
-                              onBack: () => setState(() => selectedPeerId = null),
-                            ),
-                    ),
-                  ],
-                );
-              }
-
-              return Column(
-                children: [
-                  StatusBar(text: service.lastStatus, networkText: service.pingAddressLabel),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 330,
-                          child: PeerList(
-                            peers: peers,
-                            selectedPeerId: selectedPeerId,
-                            onSelect: (peer) => setState(() => selectedPeerId = peer.id),
-                          ),
-                        ),
-                        const VerticalDivider(width: 1),
-                        Expanded(
-                          child: selectedPeer == null
-                              ? EmptyState(
-                                  isRunning: service.isRunning,
-                                  deviceName: service.localName,
-                                  pingAddressLabel: service.pingAddressLabel,
-                                )
-                              : ChatPane(
-                                  service: service,
-                                  peer: selectedPeer,
-                                  controller: messageController,
-                                  focusNode: messageFocusNode,
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
+          body: widget.visualTheme == AppVisualTheme.matrix ? MatrixBackdrop(child: body) : body,
         );
       },
     );
@@ -281,11 +419,11 @@ class _HomeScreenState extends State<HomeScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => SettingsDialog(
-        darkMode: widget.darkMode,
+        visualTheme: widget.visualTheme,
         downloadDirectory: widget.downloadDirectory,
         notificationsEnabled: widget.notificationsEnabled,
         startAtStartup: widget.startAtStartup,
-        onDarkModeChanged: widget.onDarkModeChanged,
+        onVisualThemeChanged: widget.onVisualThemeChanged,
         onDownloadDirectoryChanged: widget.onDownloadDirectoryChanged,
         onNotificationsChanged: widget.onNotificationsChanged,
         onStartAtStartupChanged: widget.onStartAtStartupChanged,
@@ -296,22 +434,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class SettingsDialog extends StatelessWidget {
   const SettingsDialog({
-    required this.darkMode,
+    required this.visualTheme,
     required this.downloadDirectory,
     required this.notificationsEnabled,
     required this.startAtStartup,
-    required this.onDarkModeChanged,
+    required this.onVisualThemeChanged,
     required this.onDownloadDirectoryChanged,
     required this.onNotificationsChanged,
     required this.onStartAtStartupChanged,
     super.key,
   });
 
-  final bool darkMode;
+  final AppVisualTheme visualTheme;
   final String? downloadDirectory;
   final bool notificationsEnabled;
   final bool startAtStartup;
-  final ValueChanged<bool> onDarkModeChanged;
+  final ValueChanged<AppVisualTheme> onVisualThemeChanged;
   final ValueChanged<String?> onDownloadDirectoryChanged;
   final ValueChanged<bool> onNotificationsChanged;
   final ValueChanged<bool> onStartAtStartupChanged;
@@ -358,12 +496,35 @@ class SettingsDialog extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    SwitchListTile(
+                    ListTile(
                       dense: true,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      title: const Text('Dark mode'),
-                      value: darkMode,
-                      onChanged: onDarkModeChanged,
+                      leading: const Icon(Icons.palette_outlined),
+                      title: const Text('Theme'),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: SegmentedButton<AppVisualTheme>(
+                          segments: const [
+                            ButtonSegment(
+                              value: AppVisualTheme.light,
+                              icon: Icon(Icons.light_mode_outlined),
+                              label: Text('Light'),
+                            ),
+                            ButtonSegment(
+                              value: AppVisualTheme.dark,
+                              icon: Icon(Icons.dark_mode_outlined),
+                              label: Text('Dark'),
+                            ),
+                            ButtonSegment(
+                              value: AppVisualTheme.matrix,
+                              icon: Icon(Icons.code),
+                              label: Text('Matrix'),
+                            ),
+                          ],
+                          selected: {visualTheme},
+                          onSelectionChanged: (values) => onVisualThemeChanged(values.single),
+                        ),
+                      ),
                     ),
                     SwitchListTile(
                       dense: true,
@@ -472,6 +633,93 @@ class SettingsDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+class MatrixBackdrop extends StatelessWidget {
+  const MatrixBackdrop({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        const Positioned.fill(
+          child: CustomPaint(painter: MatrixRainPainter()),
+        ),
+        Positioned.fill(
+          child: Container(color: matrixBlack.withAlpha(178)),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+class MatrixRainPainter extends CustomPainter {
+  const MatrixRainPainter();
+
+  static const List<String> _glyphs = ['0', '1'];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final background = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          matrixBlack,
+          Color(0xff031509),
+          matrixBlack,
+        ],
+      ).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, background);
+
+    final glowPaint = Paint()
+      ..color = matrixGreen.withAlpha(20)
+      ..strokeWidth = 1;
+    const columnWidth = 22.0;
+    const rowHeight = 18.0;
+    for (var x = 0.0; x < size.width; x += columnWidth) {
+      canvas.drawLine(Offset(x, 0), Offset(x + size.height * 0.12, size.height), glowPaint);
+    }
+
+    final columns = (size.width / columnWidth).ceil() + 1;
+    final rows = (size.height / rowHeight).ceil() + 1;
+    for (var column = 0; column < columns; column++) {
+      final phase = (column * 7) % 17;
+      for (var row = 0; row < rows; row++) {
+        final value = _glyphs[(column + row + phase) % _glyphs.length];
+        final alpha = 28 + ((row + phase) % 7) * 10;
+        final painter = TextPainter(
+          text: TextSpan(
+            text: value,
+            style: TextStyle(
+              color: matrixGreen.withAlpha(alpha.clamp(28, 96)),
+              fontFamily: 'monospace',
+              fontSize: 13,
+              fontWeight: (row + phase) % 11 == 0 ? FontWeight.w700 : FontWeight.w400,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final yOffset = ((row * rowHeight) + (phase * 5)) % (size.height + rowHeight) - rowHeight;
+        painter.paint(canvas, Offset(column * columnWidth, yOffset));
+      }
+    }
+
+    final vignette = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.transparent,
+          matrixBlack.withAlpha(210),
+        ],
+      ).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, vignette);
+  }
+
+  @override
+  bool shouldRepaint(covariant MatrixRainPainter oldDelegate) => false;
 }
 
 class StatusBar extends StatelessWidget {

@@ -13,7 +13,7 @@ No cloud server is used. Every device that should appear in the list must have W
 - Share whole folders; Wifi Chat Share packages the selected folder internally and restores it as a folder on the receiving device
 - Received-file save location selector on desktop
 - Default received-file location under Documents/app storage when no folder is selected
-- Light and dark mode toggle
+- Light, dark, and Matrix theme options
 - Optional notifications for incoming chat messages and received files
 - Refresh button that removes closed/stale peer entries without restarting the app
 - Shared Flutter codebase for Windows, Android, iOS, macOS, and Linux
@@ -90,7 +90,7 @@ The script allows inbound UDP `45872` and TCP `45873`.
 
 Open the gear icon in the app:
 
-- Dark mode: switches the app theme.
+- Theme: choose Light, Dark, or Matrix. Matrix uses a green-on-black binary-code interface inspired by futuristic communication backdrops.
 - Notifications: enables popup notifications for received messages and files.
 - Start with Windows: opens Wifi Chat Share automatically when the current Windows user signs in.
 - Allow firewall: runs the Windows firewall setup helper. This requires Administrator/UAC approval because it creates inbound firewall rules.
@@ -184,7 +184,7 @@ Enable Developer Options and USB debugging on the Android phone, connect it by U
 - Both Android and desktop devices must be on the same Wi-Fi.
 - Some phones pause background network activity aggressively. Keep the app visible while testing.
 - Notifications are optional and can be changed from the app Settings.
-- The app supports dark mode from the Settings screen.
+- The app supports Light, Dark, and Matrix themes from the Settings screen.
 - The paperclip button sends images, ZIP files, Microsoft Office files, PDFs, and any other single file format.
 - The folder button sends a complete folder and restores it as a folder on the receiving device.
 - The Settings screen is compact and scrollable so it fits Android phones with large display/text settings.
@@ -415,7 +415,7 @@ open ios/Runner.xcworkspace
 open macos/Runner.xcworkspace
 ```
 
-The app UI is shared Flutter code. Pull the latest GitHub version on the Mac mini before building iOS or macOS so the updated Settings layout, dark mode, notification options, and file-sharing UI are included in the Apple apps.
+The app UI is shared Flutter code. Pull the latest GitHub version on the Mac mini before building iOS or macOS so the updated Settings layout, theme options, notification options, and file-sharing UI are included in the Apple apps.
 
 ## Repository Notes
 
