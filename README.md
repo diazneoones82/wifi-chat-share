@@ -439,6 +439,10 @@ Ignored local-only folders include:
 
 Build the final Windows ZIP, Android APK, macOS app, and iOS archive from the checked-out source on the target machine.
 
+## License
+
+Wifi Chat Share is distributed under a proprietary use-only license. You may download, install, and use the app, but you may not modify, redistribute, fork, publish derivative versions, or change the source code unless the project author or an authorized contributor gives prior written approval. See [LICENSE](LICENSE).
+
 ## Troubleshooting
 
 ### Devices Do Not Appear
