@@ -1,10 +1,10 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
-project(wifi_chat_share LANGUAGES CXX)
+project(wifi_chat_pro LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "wifi_chat_share")
+set(BINARY_NAME "wifi_chat_pro")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -82,8 +82,8 @@ install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 install(FILES
-  "${CMAKE_CURRENT_SOURCE_DIR}/scripts/Allow_WifiChatShare_Firewall.ps1"
-  "${CMAKE_CURRENT_SOURCE_DIR}/scripts/Test_WifiChatShare_Port.ps1"
+  "${CMAKE_CURRENT_SOURCE_DIR}/scripts/Allow_WifiChatPro_Firewall.ps1"
+  "${CMAKE_CURRENT_SOURCE_DIR}/scripts/Test_WifiChatPro_Port.ps1"
   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 

@@ -1,4 +1,4 @@
-name: wifi_chat_share
+name: wifi_chat_pro
 description: Cross-platform LAN chat and file sharing app for Windows, macOS, Linux, Android, and iOS.
 publish_to: "none"
 version: 1.0.0+1
@@ -15,6 +15,8 @@ dependencies:
   shared_preferences: ^2.3.5
   flutter_local_notifications: 21.0.0
   archive: ^4.0.9
+  crypto: ^3.0.7
+  cryptography: ^2.7.0
 
 dev_dependencies:
   flutter_test:

@@ -3,7 +3,7 @@ param(
 )
 
 if ([string]::IsNullOrWhiteSpace($PeerIp)) {
-  $PeerIp = Read-Host 'Enter the peer Ping IP shown in Wifi Chat Share'
+  $PeerIp = Read-Host 'Enter the peer Ping IP shown in Wifi Chat Pro'
 }
 
 if ([string]::IsNullOrWhiteSpace($PeerIp)) {

@@ -11,7 +11,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
     <application
-        android:label="Wifi Chat Share"
+        android:label="Wifi Chat Pro"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -37,10 +37,10 @@
             </intent-filter>
         </activity>
         <service
-            android:name=".WifiChatShareTileService"
+            android:name=".WifiChatProTileService"
             android:exported="true"
             android:icon="@mipmap/ic_launcher"
-            android:label="Wifi Chat Share"
+            android:label="Wifi Chat Pro"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />

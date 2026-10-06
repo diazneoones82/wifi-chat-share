@@ -5,6 +5,8 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart' as crypto;
+import 'package:cryptography/cryptography.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +20,10 @@ const int transferPort = 45873;
 const Color matrixGreen = Color(0xff00ff66);
 const Color matrixDeepGreen = Color(0xff003b1f);
 const Color matrixBlack = Color(0xff020403);
+const String secureEnvelopeType = 'secure-v1';
+const int secureEnvelopeMaxClockSkewSeconds = 15 * 60;
+const int largeFileThresholdBytes = 1024 * 1024 * 1024;
+const int largeFileChunkBytes = 4 * 1024 * 1024;
 
 enum AppVisualTheme { light, dark, matrix }
 
@@ -164,17 +170,17 @@ ThemeData _matrixTheme() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.instance.init();
-  runApp(const WifiChatShareApp());
+  runApp(const WifiChatProApp());
 }
 
-class WifiChatShareApp extends StatefulWidget {
-  const WifiChatShareApp({super.key});
+class WifiChatProApp extends StatefulWidget {
+  const WifiChatProApp({super.key});
 
   @override
-  State<WifiChatShareApp> createState() => _WifiChatShareAppState();
+  State<WifiChatProApp> createState() => _WifiChatProAppState();
 }
 
-class _WifiChatShareAppState extends State<WifiChatShareApp> {
+class _WifiChatProAppState extends State<WifiChatProApp> {
   AppVisualTheme visualTheme = AppVisualTheme.light;
   bool notificationsEnabled = true;
   bool startAtStartup = false;
@@ -194,7 +200,9 @@ class _WifiChatShareAppState extends State<WifiChatShareApp> {
     setState(() {
       final savedTheme = prefs.getString('visualTheme');
       visualTheme = AppVisualThemeX.fromStorage(savedTheme) ??
-          ((prefs.getBool('darkMode') ?? false) ? AppVisualTheme.dark : AppVisualTheme.light);
+          ((prefs.getBool('darkMode') ?? false)
+              ? AppVisualTheme.dark
+              : AppVisualTheme.light);
       notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
       startAtStartup = prefs.getBool('startAtStartup') ?? false;
       downloadDirectory = prefs.getString('downloadDirectory');
@@ -208,7 +216,8 @@ class _WifiChatShareAppState extends State<WifiChatShareApp> {
   Future<void> _setVisualTheme(AppVisualTheme value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('visualTheme', value.storageValue);
-    await prefs.setBool('darkMode', value == AppVisualTheme.dark || value == AppVisualTheme.matrix);
+    await prefs.setBool('darkMode',
+        value == AppVisualTheme.dark || value == AppVisualTheme.matrix);
     setState(() => visualTheme = value);
   }
 
@@ -245,7 +254,7 @@ class _WifiChatShareAppState extends State<WifiChatShareApp> {
     final activeTheme = _themeFor(visualTheme);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Wifi Chat Share',
+      title: 'Wifi Chat Pro',
       theme: activeTheme,
       themeMode: ThemeMode.light,
       home: HomeScreen(
@@ -297,7 +306,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    service = LanChatService(downloadDirectory: widget.downloadDirectory)..start();
+    service = LanChatService(downloadDirectory: widget.downloadDirectory)
+      ..start();
     WindowsTrayBridge.instance.attach(service);
   }
 
@@ -324,20 +334,24 @@ class _HomeScreenState extends State<HomeScreen> {
       animation: service,
       builder: (context, _) {
         final peers = service.visiblePeers;
-        final selectedPeer = selectedPeerId == null ? null : service.peers[selectedPeerId];
+        final selectedPeer =
+            selectedPeerId == null ? null : service.peers[selectedPeerId];
         final body = LayoutBuilder(
           builder: (context, constraints) {
             final isCompact = constraints.maxWidth < 760;
             if (isCompact) {
               return Column(
                 children: [
-                  StatusBar(text: service.lastStatus, networkText: service.pingAddressLabel),
+                  StatusBar(
+                      text: service.lastStatus,
+                      networkText: service.pingAddressLabel),
                   Expanded(
                     child: selectedPeer == null
                         ? PeerList(
                             peers: peers,
                             selectedPeerId: selectedPeerId,
-                            onSelect: (peer) => setState(() => selectedPeerId = peer.id),
+                            onSelect: (peer) =>
+                                setState(() => selectedPeerId = peer.id),
                             onRemovePeer: _removePeer,
                             onClearPeers: _clearPeers,
                           )
@@ -355,7 +369,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
             return Column(
               children: [
-                StatusBar(text: service.lastStatus, networkText: service.pingAddressLabel),
+                StatusBar(
+                    text: service.lastStatus,
+                    networkText: service.pingAddressLabel),
                 Expanded(
                   child: Row(
                     children: [
@@ -364,7 +380,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: PeerList(
                           peers: peers,
                           selectedPeerId: selectedPeerId,
-                          onSelect: (peer) => setState(() => selectedPeerId = peer.id),
+                          onSelect: (peer) =>
+                              setState(() => selectedPeerId = peer.id),
                           onRemovePeer: _removePeer,
                           onClearPeers: _clearPeers,
                         ),
@@ -394,17 +411,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Wifi Chat Share'),
+            title: const Text('Wifi Chat Pro'),
             actions: [
               IconButton(
                 tooltip: service.isRunning ? 'Online' : 'Start discovery',
                 onPressed: service.isRunning ? null : service.start,
-                icon: Icon(service.isRunning ? Icons.wifi_tethering : Icons.wifi_off),
+                icon: Icon(
+                    service.isRunning ? Icons.wifi_tethering : Icons.wifi_off),
               ),
               IconButton(
                 tooltip: 'Refresh',
                 onPressed: service.refreshNow,
                 icon: const Icon(Icons.refresh),
+              ),
+              IconButton(
+                tooltip: 'Remote secure IP',
+                onPressed: _showRemoteDialog,
+                icon: const Icon(Icons.vpn_lock_outlined),
               ),
               IconButton(
                 tooltip: 'Settings',
@@ -413,9 +436,18 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          body: widget.visualTheme == AppVisualTheme.matrix ? MatrixBackdrop(child: body) : body,
+          body: widget.visualTheme == AppVisualTheme.matrix
+              ? MatrixBackdrop(child: body)
+              : body,
         );
       },
+    );
+  }
+
+  Future<void> _showRemoteDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => RemoteConnectionDialog(service: service),
     );
   }
 
@@ -431,6 +463,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onDownloadDirectoryChanged: widget.onDownloadDirectoryChanged,
         onNotificationsChanged: widget.onNotificationsChanged,
         onStartAtStartupChanged: widget.onStartAtStartupChanged,
+        service: service,
       ),
     );
   }
@@ -458,6 +491,7 @@ class SettingsDialog extends StatelessWidget {
     required this.onDownloadDirectoryChanged,
     required this.onNotificationsChanged,
     required this.onStartAtStartupChanged,
+    required this.service,
     super.key,
   });
 
@@ -469,6 +503,7 @@ class SettingsDialog extends StatelessWidget {
   final ValueChanged<String?> onDownloadDirectoryChanged;
   final ValueChanged<bool> onNotificationsChanged;
   final ValueChanged<bool> onStartAtStartupChanged;
+  final LanChatService service;
 
   @override
   Widget build(BuildContext context) {
@@ -479,173 +514,597 @@ class SettingsDialog extends StatelessWidget {
       textScaler: mediaQuery.textScaler.clamp(maxScaleFactor: 1.18),
     );
 
+    return AnimatedBuilder(
+      animation: service,
+      builder: (context, _) {
+        final remotePeers = service.savedRemotePeers;
+        return MediaQuery(
+          data: compactText,
+          child: Dialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 560,
+                maxHeight: mediaQuery.size.height * 0.88,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 22, 16, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Settings',
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Done',
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ListTile(
+                            dense: true,
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 8),
+                            leading: const Icon(Icons.palette_outlined),
+                            title: const Text('Theme'),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: SegmentedButton<AppVisualTheme>(
+                                segments: const [
+                                  ButtonSegment(
+                                    value: AppVisualTheme.light,
+                                    icon: Icon(Icons.light_mode_outlined),
+                                    label: Text('Light'),
+                                  ),
+                                  ButtonSegment(
+                                    value: AppVisualTheme.dark,
+                                    icon: Icon(Icons.dark_mode_outlined),
+                                    label: Text('Dark'),
+                                  ),
+                                  ButtonSegment(
+                                    value: AppVisualTheme.matrix,
+                                    icon: Icon(Icons.code),
+                                    label: Text('Matrix'),
+                                  ),
+                                ],
+                                selected: {visualTheme},
+                                onSelectionChanged: (values) =>
+                                    onVisualThemeChanged(values.single),
+                              ),
+                            ),
+                          ),
+                          SwitchListTile(
+                            dense: true,
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 8),
+                            title: const Text('Notifications'),
+                            subtitle: const Text('Popups for chats and files'),
+                            value: notificationsEnabled,
+                            onChanged: onNotificationsChanged,
+                          ),
+                          SwitchListTile(
+                            dense: true,
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 8),
+                            secondary: const Icon(Icons.hub_outlined),
+                            title: const Text('Use Tailscale sessions'),
+                            subtitle: const Text(
+                                'Enable saved Tailscale peers and polling'),
+                            value: service.tailscaleEnabled,
+                            onChanged: service.setTailscaleEnabled,
+                          ),
+                          if (remotePeers.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+                              child: DropdownButtonFormField<String>(
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Saved remote session',
+                                  prefixIcon: Icon(Icons.bookmark_border),
+                                ),
+                                items: remotePeers
+                                    .map(
+                                      (peer) => DropdownMenuItem(
+                                        value: peer.id,
+                                        child: Text(
+                                          '${peer.name} - ${peer.host}:${peer.port}',
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    )
+                                    .toList(growable: false),
+                                onChanged: (peerId) {
+                                  final peer = service.peers[peerId];
+                                  if (peer != null) {
+                                    service.selectSavedRemotePeer(peer);
+                                  }
+                                },
+                              ),
+                            ),
+                          if (Platform.isWindows)
+                            SwitchListTile(
+                              dense: true,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              title: const Text('Start with Windows'),
+                              subtitle: const Text('Open when you sign in'),
+                              value: startAtStartup,
+                              onChanged: onStartAtStartupChanged,
+                            ),
+                          if (Platform.isWindows)
+                            ListTile(
+                              dense: true,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              leading: const Icon(Icons.security_outlined),
+                              title: const Text('Allow firewall'),
+                              subtitle: const Text(
+                                  'Requires Administrator permission'),
+                              trailing: FilledButton.tonal(
+                                onPressed: () => WindowsDesktopTools.instance
+                                    .runFirewallScript(),
+                                child: const Text('Run'),
+                              ),
+                            ),
+                          if (Platform.isWindows)
+                            ListTile(
+                              dense: true,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              leading: const Icon(Icons.network_ping_outlined),
+                              title: const Text('Test peer port'),
+                              subtitle: const Text(
+                                  'No Administrator permission needed'),
+                              trailing: FilledButton.tonal(
+                                onPressed: () => WindowsDesktopTools.instance
+                                    .runPortTestScript(),
+                                child: const Text('Run'),
+                              ),
+                            ),
+                          if (Platform.isAndroid)
+                            ListTile(
+                              dense: true,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              leading: const Icon(Icons.flash_on_outlined),
+                              title: const Text('Quick Settings tile'),
+                              subtitle: const Text(
+                                  'Open or close from Android controls'),
+                              trailing: FilledButton.tonal(
+                                onPressed: AndroidQuickSettingsService
+                                    .instance.requestTile,
+                                child: const Text('Add'),
+                              ),
+                            ),
+                          const Divider(height: 24),
+                          ListTile(
+                            dense: true,
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 8),
+                            leading: const Icon(Icons.folder_outlined),
+                            title: const Text('Received files'),
+                            subtitle: Text(
+                              effectivePath,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border(
+                          top: BorderSide(color: colorScheme.outlineVariant)),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                    child: Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        TextButton(
+                          onPressed: () => onDownloadDirectoryChanged(null),
+                          child: const Text('Use default'),
+                        ),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.folder_open),
+                          label: const Text('Choose'),
+                          onPressed: () async {
+                            final path =
+                                await FilePicker.platform.getDirectoryPath(
+                              dialogTitle: 'Choose received files folder',
+                            );
+                            if (path != null) {
+                              onDownloadDirectoryChanged(path);
+                            }
+                          },
+                        ),
+                        FilledButton.tonal(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Done'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class RemoteConnectionDialog extends StatefulWidget {
+  const RemoteConnectionDialog({required this.service, super.key});
+
+  final LanChatService service;
+
+  @override
+  State<RemoteConnectionDialog> createState() => _RemoteConnectionDialogState();
+}
+
+class _RemoteConnectionDialogState extends State<RemoteConnectionDialog> {
+  final TextEditingController userController = TextEditingController();
+  final TextEditingController passwordController = TextEditingController();
+  final TextEditingController peerNameController = TextEditingController();
+  final TextEditingController peerIpController = TextEditingController();
+  final TextEditingController peerPortController =
+      TextEditingController(text: '$transferPort');
+  bool remoteSecurityEnabled = false;
+  RemoteTunnelKind tunnelKind = RemoteTunnelKind.tailscale;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = widget.service.remoteSecurity;
+    remoteSecurityEnabled = settings.enabled;
+    userController.text = settings.userId;
+    passwordController.text = settings.password;
+  }
+
+  @override
+  void dispose() {
+    userController.dispose();
+    passwordController.dispose();
+    peerNameController.dispose();
+    peerIpController.dispose();
+    peerPortController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final mediaQuery = MediaQuery.of(context);
+    final compactText = mediaQuery.copyWith(
+      textScaler: mediaQuery.textScaler.clamp(maxScaleFactor: 1.18),
+    );
+
     return MediaQuery(
       data: compactText,
       child: Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 16, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Settings',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Done',
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-            ),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 560,
+            maxHeight: mediaQuery.size.height * 0.88,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 22, 16, 8),
+                child: Row(
                   children: [
-                    ListTile(
-                      dense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      leading: const Icon(Icons.palette_outlined),
-                      title: const Text('Theme'),
-                      subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: SegmentedButton<AppVisualTheme>(
-                          segments: const [
-                            ButtonSegment(
-                              value: AppVisualTheme.light,
-                              icon: Icon(Icons.light_mode_outlined),
-                              label: Text('Light'),
-                            ),
-                            ButtonSegment(
-                              value: AppVisualTheme.dark,
-                              icon: Icon(Icons.dark_mode_outlined),
-                              label: Text('Dark'),
-                            ),
-                            ButtonSegment(
-                              value: AppVisualTheme.matrix,
-                              icon: Icon(Icons.code),
-                              label: Text('Matrix'),
-                            ),
-                          ],
-                          selected: {visualTheme},
-                          onSelectionChanged: (values) => onVisualThemeChanged(values.single),
-                        ),
+                    Expanded(
+                      child: Text(
+                        'Remote secure IP',
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w700),
                       ),
                     ),
-                    SwitchListTile(
-                      dense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      title: const Text('Notifications'),
-                      subtitle: const Text('Popups for chats and files'),
-                      value: notificationsEnabled,
-                      onChanged: onNotificationsChanged,
-                    ),
-                    if (Platform.isWindows)
-                      SwitchListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                        title: const Text('Start with Windows'),
-                        subtitle: const Text('Open when you sign in'),
-                        value: startAtStartup,
-                        onChanged: onStartAtStartupChanged,
-                      ),
-                    if (Platform.isWindows)
-                      ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                        leading: const Icon(Icons.security_outlined),
-                        title: const Text('Allow firewall'),
-                        subtitle: const Text('Requires Administrator permission'),
-                        trailing: FilledButton.tonal(
-                          onPressed: () => WindowsDesktopTools.instance.runFirewallScript(),
-                          child: const Text('Run'),
-                        ),
-                      ),
-                    if (Platform.isWindows)
-                      ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                        leading: const Icon(Icons.network_ping_outlined),
-                        title: const Text('Test peer port'),
-                        subtitle: const Text('No Administrator permission needed'),
-                        trailing: FilledButton.tonal(
-                          onPressed: () => WindowsDesktopTools.instance.runPortTestScript(),
-                          child: const Text('Run'),
-                        ),
-                      ),
-                    if (Platform.isAndroid)
-                      ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                        leading: const Icon(Icons.flash_on_outlined),
-                        title: const Text('Quick Settings tile'),
-                        subtitle: const Text('Open or close from Android controls'),
-                        trailing: FilledButton.tonal(
-                          onPressed: AndroidQuickSettingsService.instance.requestTile,
-                          child: const Text('Add'),
-                        ),
-                      ),
-                    const Divider(height: 24),
-                    ListTile(
-                      dense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      leading: const Icon(Icons.folder_outlined),
-                      title: const Text('Received files'),
-                      subtitle: Text(
-                        effectivePath,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                    IconButton(
+                      tooltip: 'Done',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
                 ),
               ),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Require secure remote auth'),
+                        subtitle: const Text(
+                            'Remote/manual peers use encrypted authenticated transfers'),
+                        value: remoteSecurityEnabled,
+                        onChanged: (value) =>
+                            setState(() => remoteSecurityEnabled = value),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        secondary: const Icon(Icons.hub_outlined),
+                        title: const Text('Use Tailscale sessions'),
+                        subtitle: const Text(
+                            'Enable saved Tailscale peers and polling'),
+                        value: widget.service.tailscaleEnabled,
+                        onChanged: widget.service.setTailscaleEnabled,
+                      ),
+                      TextField(
+                        controller: userController,
+                        decoration: const InputDecoration(
+                          labelText: 'User ID',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: passwordController,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Shared password',
+                          prefixIcon: Icon(Icons.password_outlined),
+                        ),
+                      ),
+                      const Divider(height: 28),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: SegmentedButton<RemoteTunnelKind>(
+                          segments: const [
+                            ButtonSegment(
+                              value: RemoteTunnelKind.tailscale,
+                              icon: Icon(Icons.hub_outlined),
+                              label: Text('Tailscale'),
+                            ),
+                            ButtonSegment(
+                              value: RemoteTunnelKind.wireguard,
+                              icon: Icon(Icons.vpn_key_outlined),
+                              label: Text('WireGuard'),
+                            ),
+                            ButtonSegment(
+                              value: RemoteTunnelKind.direct,
+                              icon: Icon(Icons.link_outlined),
+                              label: Text('Direct'),
+                            ),
+                          ],
+                          selected: {tunnelKind},
+                          onSelectionChanged: (values) =>
+                              setState(() => tunnelKind = values.single),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _SavedRemotePeerDropdown(
+                        peers: widget.service.savedRemotePeers,
+                        onSelected: _fillPeer,
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: peerNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Remote device name (optional)',
+                          prefixIcon: Icon(Icons.devices_other),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: TextField(
+                              controller: peerIpController,
+                              keyboardType: TextInputType.url,
+                              decoration: InputDecoration(
+                                labelText: tunnelKind.hostLabel,
+                                prefixIcon: Icon(Icons.language),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: peerPortController,
+                              keyboardType: TextInputType.number,
+                              decoration:
+                                  const InputDecoration(labelText: 'Port'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 8,
-                runSpacing: 8,
-              children: [
-                  TextButton(
-                    onPressed: () => onDownloadDirectoryChanged(null),
-                    child: const Text('Use default'),
-                  ),
-                  FilledButton.icon(
-                    icon: const Icon(Icons.folder_open),
-                    label: const Text('Choose'),
-                    onPressed: () async {
-                      final path = await FilePicker.platform.getDirectoryPath(
-                        dialogTitle: 'Choose received files folder',
-                      );
-                      if (path != null) {
-                        onDownloadDirectoryChanged(path);
-                      }
-                    },
-                  ),
-                  FilledButton.tonal(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Done'),
-                  ),
-                ],
+              Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                      top: BorderSide(color: colorScheme.outlineVariant)),
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Close'),
+                    ),
+                    FilledButton.tonalIcon(
+                      icon: const Icon(Icons.save_outlined),
+                      label: const Text('Save security'),
+                      onPressed: _saveSecurity,
+                    ),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.add_link),
+                      label: const Text('Add peer'),
+                      onPressed: _addPeer,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _saveSecurity() async {
+    await widget.service.saveRemoteSecurity(
+      RemoteSecuritySettings(
+        enabled: remoteSecurityEnabled,
+        userId: userController.text.trim(),
+        password: passwordController.text,
+      ),
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Remote security saved')),
+      );
+    }
+  }
+
+  Future<void> _addPeer() async {
+    await _saveSecurity();
+    final added = widget.service.addRemotePeer(
+      name: peerNameController.text.trim(),
+      host: peerIpController.text.trim(),
+      port: int.tryParse(peerPortController.text.trim()) ?? transferPort,
+      tunnelKind: tunnelKind,
+    );
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text(
+              added ? 'Remote peer added' : 'Enter a valid IP or hostname')),
+    );
+    if (added) {
+      peerNameController.clear();
+      peerIpController.clear();
+    }
+  }
+
+  void _fillPeer(PeerDevice peer) {
+    setState(() {
+      tunnelKind = peer.tunnelKind ?? RemoteTunnelKind.tailscale;
+      peerNameController.text = peer.name == peer.host ? '' : peer.name;
+      peerIpController.text = peer.host;
+      peerPortController.text = '${peer.port}';
+    });
+  }
+}
+
+class _SavedRemotePeerDropdown extends StatelessWidget {
+  const _SavedRemotePeerDropdown({
+    required this.peers,
+    required this.onSelected,
+  });
+
+  final List<PeerDevice> peers;
+  final ValueChanged<PeerDevice> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (peers.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return DropdownButtonFormField<String>(
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Saved remote session',
+        prefixIcon: Icon(Icons.bookmark_border),
+      ),
+      items: peers
+          .map(
+            (peer) => DropdownMenuItem(
+              value: peer.id,
+              child: Text(
+                '${peer.name} - ${peer.tunnelKind?.label ?? 'Remote'} - ${peer.host}:${peer.port}',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+          .toList(growable: false),
+      onChanged: (peerId) {
+        for (final peer in peers) {
+          if (peer.id == peerId) {
+            onSelected(peer);
+            break;
+          }
+        }
+      },
+    );
+  }
+}
+
+class SavedRemotePeers extends StatelessWidget {
+  const SavedRemotePeers({
+    required this.peers,
+    required this.onSelected,
+    super.key,
+  });
+
+  final List<PeerDevice> peers;
+  final ValueChanged<PeerDevice> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (peers.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: peers
+            .map(
+              (peer) => ListTile(
+                dense: true,
+                leading: Icon(_platformIcon(peer.platform)),
+                title: Text(peer.name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(
+                    '${peer.tunnelKind?.label ?? 'Remote'} • ${peer.host}:${peer.port}'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => onSelected(peer),
+              ),
+            )
+            .toList(growable: false),
       ),
     );
   }
@@ -710,7 +1169,10 @@ class StatusBar extends StatelessWidget {
                 text,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                style: Theme.of(context)
+                    .textTheme
+                    .labelMedium
+                    ?.copyWith(color: colorScheme.onSurfaceVariant),
               ),
             ),
             const SizedBox(width: 12),
@@ -749,7 +1211,8 @@ class PeerList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerLowest),
+      decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerLowest),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -760,7 +1223,10 @@ class PeerList extends StatelessWidget {
                 Expanded(
                   child: Text(
                     'Nearby devices',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                 ),
                 if (peers.isNotEmpty)
@@ -791,21 +1257,28 @@ class PeerList extends StatelessWidget {
                       return GestureDetector(
                         key: ValueKey(peer.id),
                         behavior: HitTestBehavior.opaque,
-                        onSecondaryTapDown: (details) => _showPeerMenu(context, peer, details.globalPosition),
-                        onLongPressStart: (details) => _showPeerMenu(context, peer, details.globalPosition),
+                        onSecondaryTapDown: (details) => _showPeerMenu(
+                            context, peer, details.globalPosition),
+                        onLongPressStart: (details) => _showPeerMenu(
+                            context, peer, details.globalPosition),
                         child: ListTile(
                           selected: selected,
-                          selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          selectedTileColor:
+                              Theme.of(context).colorScheme.secondaryContainer,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
                           leading: CircleAvatar(
                             child: Icon(_platformIcon(peer.platform)),
                           ),
-                          title: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text('${peer.platformLabel} • ${peer.address.address}'),
+                          title: Text(peer.name,
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(
+                              '${peer.platformLabel} • ${peer.hostLabel} • ${peer.securityLabel}'),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(peer.isFresh ? Icons.circle : Icons.schedule, size: 14),
+                              Icon(peer.isFresh ? Icons.circle : Icons.schedule,
+                                  size: 14),
                               PopupMenuButton<String>(
                                 tooltip: 'Device options',
                                 icon: const Icon(Icons.more_vert),
@@ -842,7 +1315,8 @@ class PeerList extends StatelessWidget {
     );
   }
 
-  Future<void> _showPeerMenu(BuildContext context, PeerDevice peer, Offset position) async {
+  Future<void> _showPeerMenu(
+      BuildContext context, PeerDevice peer, Offset position) async {
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final selected = await showMenu<String>(
       context: context,
@@ -896,30 +1370,58 @@ class ChatPane extends StatelessWidget {
           color: Theme.of(context).colorScheme.surface,
           child: SafeArea(
             bottom: false,
-            child: ListTile(
-              leading: onBack == null
-                  ? CircleAvatar(child: Icon(_platformIcon(peer.platform)))
-                  : IconButton(
-                      tooltip: 'Back',
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: onBack,
+            child: SizedBox(
+              height: 44,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Row(
+                  children: [
+                    if (onBack != null)
+                      IconButton(
+                        tooltip: 'Back',
+                        icon: const Icon(Icons.arrow_back),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: onBack,
+                      ),
+                    CircleAvatar(
+                      radius: 14,
+                      child: Icon(_platformIcon(peer.platform), size: 17),
                     ),
-              title: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text('${peer.platformLabel} • ${peer.address.address}'),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: 'Send file, image, ZIP, or document',
-                    icon: const Icon(Icons.attach_file),
-                    onPressed: () => service.pickAndSendFile(peer),
-                  ),
-                  IconButton(
-                    tooltip: 'Send folder',
-                    icon: const Icon(Icons.create_new_folder_outlined),
-                    onPressed: () => service.pickAndSendFolder(peer),
-                  ),
-                ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        peer.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Send file, image, ZIP, or document',
+                      icon: const Icon(Icons.attach_file),
+                      onPressed: () => service.pickAndSendFile(peer),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Send folder',
+                      icon: const Icon(Icons.create_new_folder_outlined),
+                      onPressed: () => service.pickAndSendFolder(peer),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Clear chat',
+                      icon: const Icon(Icons.delete_sweep_outlined),
+                      onPressed: () => service.clearChat(peer.id),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Export chat as text',
+                      icon: const Icon(Icons.ios_share_outlined),
+                      onPressed: () => service.exportChatAsText(peer),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1036,7 +1538,10 @@ class TransferProgressList extends StatelessWidget {
                                   '${transfer.direction.label} ${transfer.name}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelLarge
+                                      ?.copyWith(
                                         fontWeight: FontWeight.w700,
                                       ),
                                 ),
@@ -1044,7 +1549,10 @@ class TransferProgressList extends StatelessWidget {
                               const SizedBox(width: 10),
                               Text(
                                 '${transfer.percent}%',
-                                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelLarge
+                                    ?.copyWith(
                                       color: colorScheme.primary,
                                       fontWeight: FontWeight.w800,
                                     ),
@@ -1078,9 +1586,11 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final align = message.outgoing ? Alignment.centerRight : Alignment.centerLeft;
+    final align =
+        message.outgoing ? Alignment.centerRight : Alignment.centerLeft;
     final isSystem = message.kind == MessageKind.system;
-    final isAttachment = message.kind == MessageKind.file || message.kind == MessageKind.folder;
+    final isAttachment =
+        message.kind == MessageKind.file || message.kind == MessageKind.folder;
     final copyText = _copyTextForMessage(message);
     final background = isSystem
         ? colorScheme.errorContainer
@@ -1125,10 +1635,15 @@ class MessageBubble extends StatelessWidget {
                               const SizedBox(width: 8),
                               Flexible(
                                 child: Text(
-                                  message.fileName ?? (message.kind == MessageKind.folder ? 'Folder' : 'File'),
+                                  message.fileName ??
+                                      (message.kind == MessageKind.folder
+                                          ? 'Folder'
+                                          : 'File'),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(color: foreground, fontWeight: FontWeight.w700),
+                                  style: TextStyle(
+                                      color: foreground,
+                                      fontWeight: FontWeight.w700),
                                 ),
                               ),
                             ],
@@ -1151,13 +1666,19 @@ class MessageBubble extends StatelessWidget {
                 const SizedBox(height: 6),
                 SelectableText(
                   message.filePath!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: foreground.withAlpha(191)),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: foreground.withAlpha(191)),
                 ),
               ],
               const SizedBox(height: 4),
               Text(
                 _timeLabel(message.createdAt),
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: foreground.withAlpha(178)),
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: foreground.withAlpha(178)),
               ),
             ],
           ),
@@ -1201,6 +1722,215 @@ class CopyMessageButton extends StatelessWidget {
   }
 }
 
+class SecureEnvelope {
+  const SecureEnvelope({
+    required this.header,
+    required this.cipherText,
+  });
+
+  final Map<String, Object?> header;
+  final Uint8List cipherText;
+}
+
+class PendingEnvelope {
+  const PendingEnvelope({
+    required this.peerId,
+    required this.header,
+    required this.body,
+  });
+
+  final String peerId;
+  final Map<String, Object?> header;
+  final Uint8List? body;
+
+  String get id => header['id'] as String? ?? '';
+}
+
+class RemoteCrypto {
+  RemoteCrypto._();
+
+  static final AesGcm _cipher = AesGcm.with256bits();
+  static final Pbkdf2 _kdf = Pbkdf2(
+    macAlgorithm: Hmac.sha256(),
+    iterations: 120000,
+    bits: 256,
+  );
+
+  static Future<SecureEnvelope> encryptEnvelope({
+    required RemoteSecuritySettings settings,
+    required String localId,
+    required String localName,
+    required Map<String, Object?> header,
+    required Uint8List? body,
+    required List<String> replyHosts,
+  }) async {
+    if (!settings.isUsable) {
+      throw const FormatException('Remote security is not configured');
+    }
+    final salt = _secureRandomBytes(16);
+    final nonce = _secureRandomBytes(12);
+    final innerHeader =
+        Uint8List.fromList(utf8.encode('${jsonEncode(header)}\n'));
+    final plain = BytesBuilder(copy: false)
+      ..add(innerHeader)
+      ..add(body ?? Uint8List(0));
+    final key = await _deriveKey(settings, salt);
+    final aad = utf8.encode('$secureEnvelopeType|${settings.userId}|$localId');
+    final secretBox = await _cipher.encrypt(
+      plain.takeBytes(),
+      secretKey: key,
+      nonce: nonce,
+      aad: aad,
+    );
+    final cipherText = Uint8List.fromList([
+      ...secretBox.cipherText,
+      ...secretBox.mac.bytes,
+    ]);
+    final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final proof = _authProof(
+      settings: settings,
+      userId: settings.userId,
+      nonce: nonce,
+      timestamp: timestamp,
+      cipherText: cipherText,
+    );
+
+    return SecureEnvelope(
+      header: {
+        'type': secureEnvelopeType,
+        'id': header['id'],
+        'fromId': localId,
+        'fromName': localName,
+        'userId': settings.userId,
+        'byteLength': cipherText.length,
+        'salt': base64Url.encode(salt),
+        'nonce': base64Url.encode(nonce),
+        'timestamp': timestamp,
+        'proof': proof,
+        'replyHosts': replyHosts
+            .where(
+                (host) => _isValidRemoteHost(host) && !host.startsWith('127.'))
+            .toList(growable: false),
+        'innerType': header['type'],
+        'fileName': header['fileName'],
+        'folderName': header['folderName'],
+      },
+      cipherText: cipherText,
+    );
+  }
+
+  static Future<IncomingEnvelope> decryptEnvelope({
+    required RemoteSecuritySettings settings,
+    required IncomingEnvelope envelope,
+    required InternetAddress remoteAddress,
+  }) async {
+    if (!settings.isUsable) {
+      throw const FormatException('Remote security is not configured');
+    }
+    final header = envelope.header;
+    if (header['userId'] != settings.userId) {
+      throw const FormatException('Remote user ID rejected');
+    }
+    final timestamp = header['timestamp'] as int? ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    if ((now - timestamp).abs() > secureEnvelopeMaxClockSkewSeconds) {
+      throw const FormatException('Remote auth timestamp expired');
+    }
+    final bodyFile = envelope.bodyFile;
+    if (bodyFile == null) {
+      throw const FormatException('Missing secure payload');
+    }
+    final cipherText = await bodyFile.readAsBytes();
+    final nonce =
+        Uint8List.fromList(base64Url.decode(header['nonce'] as String? ?? ''));
+    final expectedProof = _authProof(
+      settings: settings,
+      userId: settings.userId,
+      nonce: nonce,
+      timestamp: timestamp,
+      cipherText: cipherText,
+    );
+    if (expectedProof != (header['proof'] as String? ?? '')) {
+      throw const FormatException('Remote password proof rejected');
+    }
+    if (cipherText.length < 16) {
+      throw const FormatException('Secure payload is too small');
+    }
+    final salt =
+        Uint8List.fromList(base64Url.decode(header['salt'] as String? ?? ''));
+    final key = await _deriveKey(settings, salt);
+    final macStart = cipherText.length - 16;
+    final secretBox = SecretBox(
+      Uint8List.sublistView(cipherText, 0, macStart),
+      nonce: nonce,
+      mac: Mac(Uint8List.sublistView(cipherText, macStart)),
+    );
+    final aad = utf8.encode(
+        '$secureEnvelopeType|${settings.userId}|${header['fromId'] ?? remoteAddress.address}');
+    final plain = Uint8List.fromList(
+        await _cipher.decrypt(secretBox, secretKey: key, aad: aad));
+    final split = plain.indexOf(10);
+    if (split < 0) {
+      throw const FormatException('Secure payload header is missing');
+    }
+    final innerHeader =
+        jsonDecode(utf8.decode(Uint8List.sublistView(plain, 0, split)))
+            as Map<String, dynamic>;
+    final expectedBodyLength = innerHeader['byteLength'] as int? ?? 0;
+    File? decryptedBodyFile;
+    if (expectedBodyLength > 0) {
+      final bodyBytes = Uint8List.sublistView(plain, split + 1);
+      if (bodyBytes.length != expectedBodyLength) {
+        throw FormatException(
+            'Secure body length mismatch: ${bodyBytes.length} of $expectedBodyLength');
+      }
+      decryptedBodyFile = await _writeTempPayload(bodyBytes);
+    }
+    return IncomingEnvelope(header: innerHeader, bodyFile: decryptedBodyFile);
+  }
+
+  static Future<SecretKey> _deriveKey(
+      RemoteSecuritySettings settings, Uint8List salt) {
+    final material = '${settings.userId}\u0000${settings.password}';
+    return _kdf.deriveKey(
+        secretKey: SecretKey(utf8.encode(material)), nonce: salt);
+  }
+
+  static String _authProof({
+    required RemoteSecuritySettings settings,
+    required String userId,
+    required Uint8List nonce,
+    required int timestamp,
+    required Uint8List cipherText,
+  }) {
+    final digest = crypto.sha256.convert(cipherText);
+    final key =
+        utf8.encode('${settings.userId}\u0000${settings.password}\u0000auth');
+    final message =
+        utf8.encode('$userId|${base64Url.encode(nonce)}|$timestamp|$digest');
+    return crypto.Hmac(crypto.sha256, key).convert(message).toString();
+  }
+
+  static Uint8List _secureRandomBytes(int length) {
+    final random = Random.secure();
+    return Uint8List.fromList(
+        List<int>.generate(length, (_) => random.nextInt(256)));
+  }
+
+  static Future<File> _writeTempPayload(Uint8List bytes) async {
+    final directory = await getTemporaryDirectory();
+    final transferDir = Directory(
+        '${directory.path}${Platform.pathSeparator}WifiChatProTransfers');
+    if (!await transferDir.exists()) {
+      await transferDir.create(recursive: true);
+    }
+    final file = File(
+        '${transferDir.path}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}-${_makeId()}.plain');
+    await file.writeAsBytes(bytes, flush: true);
+    return file;
+  }
+}
+
 class EmptyState extends StatelessWidget {
   const EmptyState({
     required this.isRunning,
@@ -1232,7 +1962,10 @@ class EmptyState extends StatelessWidget {
               Text(
                 deviceName,
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
               Text(
@@ -1245,7 +1978,7 @@ class EmptyState extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Open Wifi Chat Share on another device connected to this network. Devices will appear automatically.',
+                'Open Wifi Chat Pro on another device connected to this network. Devices will appear automatically.',
                 textAlign: TextAlign.center,
               ),
             ],
@@ -1262,13 +1995,21 @@ class LanChatService extends ChangeNotifier {
         localName = _localDeviceName(),
         _downloadDirectory = downloadDirectory;
 
-  final String localId;
+  String localId;
   final String localName;
   final Map<String, PeerDevice> peers = {};
   final Map<String, List<ChatMessage>> _messages = {};
   final Map<String, TransferProgress> _transfers = {};
+  final Map<String, LargeFileReceiveState> _largeFileReceives = {};
+  final Map<String, List<PendingEnvelope>> _pendingRemoteOutbox = {};
+  final Set<String> _activeRemotePolls = {};
+  final Set<String> _pollPreferredPeerIds = {};
+  final Map<String, List<Completer<void>>> _remotePollWaiters = {};
   final Set<String> _hiddenPeerIds = {};
+  final Set<String> _deliveredIncomingIds = {};
+  bool tailscaleEnabled = true;
   String? _downloadDirectory;
+  RemoteSecuritySettings remoteSecurity = RemoteSecuritySettings.empty;
   List<String> _localIPv4AddressText = const [];
   String lastStatus = 'Starting...';
 
@@ -1277,6 +2018,7 @@ class LanChatService extends ChangeNotifier {
   Timer? _announceTimer;
   Timer? _cleanupTimer;
   Timer? _healthTimer;
+  Timer? _remotePollTimer;
   bool _bindingDiscovery = false;
   bool _bindingServer = false;
   bool _disposed = false;
@@ -1306,9 +2048,19 @@ class LanChatService extends ChangeNotifier {
         if (name != 0) {
           return name;
         }
-        return a.address.address.compareTo(b.address.address);
+        return a.host.compareTo(b.host);
       });
     return values;
+  }
+
+  List<PeerDevice> get savedRemotePeers {
+    final values = peers.values
+        .where((peer) =>
+            peer.secureRemote &&
+            (tailscaleEnabled || peer.tunnelKind != RemoteTunnelKind.tailscale))
+        .toList(growable: false)
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return List.unmodifiable(values);
   }
 
   Future<void> start() async {
@@ -1317,19 +2069,30 @@ class LanChatService extends ChangeNotifier {
     }
 
     await _requestPermissions();
+    await _loadLocalIdentity();
+    await _loadAppSettings();
+    await _loadRemoteSecurity();
+    await _loadRemotePeers();
+    await _loadChatHistory();
     await _refreshLocalAddresses(notify: false);
     await _bindDiscoverySocket();
     await _bindTransferServer();
 
-    _announceTimer = Timer.periodic(const Duration(seconds: 3), (_) => broadcastNow());
-    _cleanupTimer = Timer.periodic(const Duration(seconds: 15), (_) => _removeStalePeers());
-    _healthTimer = Timer.periodic(const Duration(seconds: 10), (_) => _ensureSocketsHealthy());
+    _announceTimer =
+        Timer.periodic(const Duration(seconds: 3), (_) => broadcastNow());
+    _cleanupTimer =
+        Timer.periodic(const Duration(seconds: 15), (_) => _removeStalePeers());
+    _healthTimer = Timer.periodic(
+        const Duration(seconds: 10), (_) => _ensureSocketsHealthy());
+    _remotePollTimer = Timer.periodic(
+        const Duration(seconds: 2), (_) => _pollSecureRemotePeers());
     isRunning = true;
     if (_server != null) {
       lastStatus = 'Online as $localName on ports $discoveryPort/$transferPort';
     }
     notifyListeners();
     broadcastNow();
+    _pollSecureRemotePeers();
   }
 
   Future<void> _bindDiscoverySocket() async {
@@ -1376,7 +2139,8 @@ class LanChatService extends ChangeNotifier {
     }
     _bindingServer = true;
     try {
-      _server = await ServerSocket.bind(InternetAddress.anyIPv4, transferPort, shared: true);
+      _server = await ServerSocket.bind(InternetAddress.anyIPv4, transferPort,
+          shared: true);
       _server?.listen(
         _handleIncomingSocket,
         onError: (Object error) {
@@ -1395,7 +2159,8 @@ class LanChatService extends ChangeNotifier {
         cancelOnError: true,
       );
     } catch (error) {
-      lastStatus = 'Transfer port unavailable: close other Wifi Chat Share windows and restart';
+      lastStatus =
+          'Transfer port unavailable: close other Wifi Chat Pro windows and restart';
       notifyListeners();
     } finally {
       _bindingServer = false;
@@ -1462,18 +2227,255 @@ class LanChatService extends ChangeNotifier {
     }
   }
 
-  List<ChatMessage> messagesFor(String peerId) => List.unmodifiable(_messages[peerId] ?? const []);
+  List<ChatMessage> messagesFor(String peerId) =>
+      List.unmodifiable(_messages[peerId] ?? const []);
+
+  void _addMessage(ChatMessage message) {
+    _messages.putIfAbsent(message.peerId, () => []).add(message);
+    unawaited(_saveChatHistory());
+  }
+
+  Future<void> _loadChatHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = prefs.getString('chatHistory');
+    if (encoded == null || encoded.trim().isEmpty) {
+      return;
+    }
+    try {
+      final values = jsonDecode(encoded) as Map<String, dynamic>;
+      for (final entry in values.entries) {
+        final messages = (entry.value as List<dynamic>)
+            .whereType<Map<String, dynamic>>()
+            .map(ChatMessage.fromJson)
+            .whereType<ChatMessage>()
+            .toList(growable: false);
+        if (messages.isNotEmpty) {
+          _messages[entry.key] = messages;
+        }
+      }
+    } catch (_) {
+      return;
+    }
+  }
+
+  Future<void> _saveChatHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final values = <String, List<Map<String, Object?>>>{};
+    for (final entry in _messages.entries) {
+      final recent = entry.value
+          .where((message) => message.kind != MessageKind.system)
+          .toList(growable: false);
+      if (recent.isEmpty) {
+        continue;
+      }
+      final start = max(0, recent.length - 5);
+      values[entry.key] =
+          recent.skip(start).map((message) => message.toJson()).toList();
+    }
+    await prefs.setString('chatHistory', jsonEncode(values));
+  }
+
+  void clearChat(String peerId) {
+    final removed = _messages.remove(peerId);
+    unawaited(_saveChatHistory());
+    lastStatus = removed == null || removed.isEmpty
+        ? 'Chat is already empty'
+        : 'Chat cleared';
+    notifyListeners();
+  }
+
+  Future<void> exportChatAsText(PeerDevice peer) async {
+    final messages = _messages[peer.id] ?? const <ChatMessage>[];
+    if (messages.isEmpty) {
+      lastStatus = 'No chat to export';
+      notifyListeners();
+      return;
+    }
+
+    try {
+      final directory = await _incomingDirectory();
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+      final now = DateTime.now();
+      final stamp = now
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .replaceAll('.', '-')
+          .replaceFirst(RegExp(r'[-+]\d\d-\d\d$'), '');
+      final peerName = _safeFileName(peer.name);
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}WifiChatPro-$peerName-$stamp.txt',
+      );
+      await file.writeAsString(
+        _chatTranscript(peer, messages),
+        flush: true,
+      );
+      lastStatus = 'Chat exported to ${file.path}';
+    } catch (error) {
+      lastStatus = 'Chat export failed: ${_shortError(error)}';
+    }
+    notifyListeners();
+  }
 
   List<TransferProgress> transfersFor(String peerId) {
-    final values = _transfers.values.where((transfer) => transfer.peerId == peerId).toList(growable: false)
+    final values = _transfers.values
+        .where((transfer) => transfer.peerId == peerId)
+        .toList(growable: false)
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return List.unmodifiable(values);
   }
 
   void setDownloadDirectory(String? path) {
     _downloadDirectory = path;
-    lastStatus = path == null ? 'Received files will save to Documents' : 'Received files will save to $path';
+    lastStatus = path == null
+        ? 'Received files will save to Documents'
+        : 'Received files will save to $path';
     notifyListeners();
+  }
+
+  Future<void> _loadRemoteSecurity() async {
+    final prefs = await SharedPreferences.getInstance();
+    remoteSecurity = RemoteSecuritySettings(
+      enabled: prefs.getBool('remoteSecurityEnabled') ?? false,
+      userId: prefs.getString('remoteUserId') ?? '',
+      password: prefs.getString('remotePassword') ?? '',
+    );
+  }
+
+  Future<void> _loadLocalIdentity() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedId = prefs.getString('localDeviceId');
+    if (savedId != null && savedId.trim().isNotEmpty) {
+      localId = savedId;
+      return;
+    }
+    await prefs.setString('localDeviceId', localId);
+  }
+
+  Future<void> _loadAppSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    tailscaleEnabled = prefs.getBool('tailscaleEnabled') ?? true;
+  }
+
+  Future<void> setTailscaleEnabled(bool value) async {
+    if (tailscaleEnabled == value) {
+      return;
+    }
+    tailscaleEnabled = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('tailscaleEnabled', value);
+    if (!value) {
+      _activeRemotePolls.removeWhere(
+          (peerId) => peers[peerId]?.tunnelKind == RemoteTunnelKind.tailscale);
+      _remotePollWaiters.removeWhere((peerId, _) =>
+          peers[peerId]?.tunnelKind == RemoteTunnelKind.tailscale);
+    }
+    lastStatus =
+        value ? 'Tailscale sessions enabled' : 'Tailscale sessions disabled';
+    notifyListeners();
+  }
+
+  void selectSavedRemotePeer(PeerDevice peer) {
+    lastStatus = 'Selected ${peer.name} at ${peer.host}:${peer.port}';
+    notifyListeners();
+  }
+
+  Future<void> saveRemoteSecurity(RemoteSecuritySettings settings) async {
+    final normalized = RemoteSecuritySettings(
+      enabled: settings.enabled,
+      userId: settings.userId.trim(),
+      password: settings.password,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('remoteSecurityEnabled', normalized.enabled);
+    await prefs.setString('remoteUserId', normalized.userId);
+    await prefs.setString('remotePassword', normalized.password);
+    remoteSecurity = normalized;
+    lastStatus = normalized.isUsable
+        ? 'Remote secure auth enabled'
+        : 'Remote secure auth is incomplete';
+    notifyListeners();
+  }
+
+  Future<void> _loadRemotePeers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = prefs.getString('remotePeers');
+    if (encoded == null || encoded.trim().isEmpty) {
+      return;
+    }
+    try {
+      final values = jsonDecode(encoded) as List<dynamic>;
+      for (final value in values.whereType<Map<String, dynamic>>()) {
+        final host = value['host'] as String? ?? '';
+        final port = value['port'] as int? ?? transferPort;
+        final kind =
+            RemoteTunnelKindX.fromStorage(value['tunnelKind'] as String?) ??
+                RemoteTunnelKind.tailscale;
+        addRemotePeer(
+          name: value['name'] as String? ?? '',
+          host: host,
+          port: port,
+          tunnelKind: kind,
+          persist: false,
+          notify: false,
+        );
+      }
+    } catch (_) {
+      return;
+    }
+  }
+
+  Future<void> _saveRemotePeers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final values = peers.values
+        .where((peer) => peer.secureRemote)
+        .map(
+          (peer) => {
+            'name': peer.name == peer.host ? '' : peer.name,
+            'host': peer.host,
+            'port': peer.port,
+            'tunnelKind':
+                (peer.tunnelKind ?? RemoteTunnelKind.tailscale).storageValue,
+          },
+        )
+        .toList(growable: false);
+    await prefs.setString('remotePeers', jsonEncode(values));
+  }
+
+  bool addRemotePeer({
+    required String name,
+    required String host,
+    required int port,
+    required RemoteTunnelKind tunnelKind,
+    bool persist = true,
+    bool notify = true,
+  }) {
+    final trimmedHost = host.trim();
+    if (!_isValidRemoteHost(trimmedHost) || port <= 0 || port > 65535) {
+      return false;
+    }
+    final peerId = 'remote:${trimmedHost.toLowerCase()}:$port';
+    peers[peerId] = PeerDevice(
+      id: peerId,
+      name: name.trim().isEmpty ? trimmedHost : name.trim(),
+      platform: tunnelKind.name,
+      address: InternetAddress.anyIPv4,
+      host: trimmedHost,
+      port: port,
+      lastSeen: DateTime.now(),
+      secureRemote: true,
+      tunnelKind: tunnelKind,
+    );
+    _hiddenPeerIds.remove(peerId);
+    lastStatus = 'Added ${tunnelKind.label} peer $trimmedHost:$port';
+    if (persist) {
+      _saveRemotePeers();
+    }
+    if (notify) {
+      notifyListeners();
+    }
+    return true;
   }
 
   void removePeer(String peerId) {
@@ -1482,6 +2484,11 @@ class LanChatService extends ChangeNotifier {
       return;
     }
     _hiddenPeerIds.add(peerId);
+    _messages.remove(peerId);
+    if (peer.secureRemote) {
+      _saveRemotePeers();
+    }
+    unawaited(_saveChatHistory());
     lastStatus = 'Removed ${peer.name} from nearby devices';
     notifyListeners();
   }
@@ -1490,7 +2497,11 @@ class LanChatService extends ChangeNotifier {
     final count = peers.length;
     _hiddenPeerIds.addAll(peers.keys);
     peers.clear();
-    lastStatus = count == 0 ? 'Nearby devices list is already empty' : 'Cleared $count nearby device(s)';
+    _messages.clear();
+    unawaited(_saveChatHistory());
+    lastStatus = count == 0
+        ? 'Nearby devices list is already empty'
+        : 'Cleared $count nearby device(s)';
     notifyListeners();
   }
 
@@ -1554,6 +2565,109 @@ class LanChatService extends ChangeNotifier {
     }
   }
 
+  bool _queueRemoteEnvelope(
+    PeerDevice peer,
+    Map<String, Object?> header, {
+    Uint8List? body,
+  }) {
+    if (!peer.secureRemote || !remoteSecurity.isUsable) {
+      return false;
+    }
+    _pendingRemoteOutbox.putIfAbsent(peer.id, () => []).add(
+          PendingEnvelope(
+            peerId: peer.id,
+            header: Map<String, Object?>.from(header),
+            body: body == null ? null : Uint8List.fromList(body),
+          ),
+        );
+    _completeRemotePollWaiters(peer.id);
+    final peerName = peer.name.trim().toLowerCase();
+    for (final candidate in peers.values) {
+      if (!candidate.secureRemote || candidate.id == peer.id) {
+        continue;
+      }
+      final sameHost = candidate.host.toLowerCase() == peer.host.toLowerCase();
+      final sameName = peerName.isNotEmpty &&
+          candidate.name.trim().toLowerCase() == peerName;
+      if (sameHost || sameName) {
+        _completeRemotePollWaiters(candidate.id);
+      }
+    }
+    return true;
+  }
+
+  void _completeRemotePollWaiters(String peerId) {
+    final waiters = _remotePollWaiters.remove(peerId);
+    if (waiters != null) {
+      for (final waiter in waiters) {
+        if (!waiter.isCompleted) {
+          waiter.complete();
+        }
+      }
+    }
+  }
+
+  PendingEnvelope? _peekPendingEnvelope(String peerId) {
+    final queue = _pendingRemoteOutbox[peerId];
+    if (queue == null || queue.isEmpty) {
+      return null;
+    }
+    return queue.first;
+  }
+
+  void _removePendingEnvelope(PendingEnvelope pending) {
+    final queue = _pendingRemoteOutbox[pending.peerId];
+    if (queue == null || queue.isEmpty) {
+      return;
+    }
+    queue.removeWhere((item) => item.id == pending.id);
+    if (queue.isEmpty) {
+      _pendingRemoteOutbox.remove(pending.peerId);
+    }
+  }
+
+  Future<PendingEnvelope?> _waitForPendingEnvelope(String peerId) async {
+    final existing = _peekPendingEnvelope(peerId);
+    if (existing != null) {
+      return existing;
+    }
+    final waiter = Completer<void>();
+    _remotePollWaiters.putIfAbsent(peerId, () => []).add(waiter);
+    try {
+      await waiter.future.timeout(const Duration(seconds: 25));
+    } catch (_) {
+      final waiters = _remotePollWaiters[peerId];
+      waiters?.remove(waiter);
+      if (waiters != null && waiters.isEmpty) {
+        _remotePollWaiters.remove(peerId);
+      }
+    }
+    return _peekPendingEnvelope(peerId);
+  }
+
+  PendingEnvelope? _peekPendingEnvelopeForPeerAlias(
+      String peerId, PeerDevice peer) {
+    final peerName = peer.name.trim().toLowerCase();
+    final candidates = peers.values.where((candidate) {
+      if (!candidate.secureRemote || candidate.id == peerId) {
+        return false;
+      }
+      if (candidate.host.toLowerCase() == peer.host.toLowerCase()) {
+        return true;
+      }
+      return peerName.isNotEmpty &&
+          candidate.name.trim().toLowerCase() == peerName;
+    }).toList(growable: false);
+    for (final candidate in candidates) {
+      final pending = _peekPendingEnvelope(candidate.id);
+      if (pending != null) {
+        _pollPreferredPeerIds.add(candidate.id);
+        return pending;
+      }
+    }
+    return null;
+  }
+
   Future<void> refreshNow() async {
     _hiddenPeerIds.clear();
     final cutoff = DateTime.now().subtract(const Duration(minutes: 2));
@@ -1568,11 +2682,18 @@ class LanChatService extends ChangeNotifier {
     await _refreshLocalAddresses(notify: false);
     await broadcastNow();
 
-    lastStatus = peers.isEmpty ? 'Refreshed; waiting for nearby devices' : 'Refreshed ${peers.length} nearby device(s)';
+    lastStatus = peers.isEmpty
+        ? 'Refreshed; waiting for nearby devices'
+        : 'Refreshed ${peers.length} nearby device(s)';
     notifyListeners();
   }
 
   Future<void> sendText(PeerDevice peer, String text) async {
+    if (!_isPeerTransportEnabled(peer)) {
+      lastStatus = '${peer.name} is disabled';
+      notifyListeners();
+      return;
+    }
     final message = ChatMessage(
       id: _makeId(),
       peerId: peer.id,
@@ -1581,23 +2702,47 @@ class LanChatService extends ChangeNotifier {
       outgoing: true,
       createdAt: DateTime.now(),
     );
-    _messages.putIfAbsent(peer.id, () => []).add(message);
+    _addMessage(message);
     notifyListeners();
 
+    final outgoingHeader = {
+      'type': 'chat',
+      'id': message.id,
+      'fromId': localId,
+      'fromName': localName,
+      'text': text,
+      'createdAt': message.createdAt.toIso8601String(),
+    };
+
     try {
-      await _sendEnvelope(peer, {
-        'type': 'chat',
-        'id': message.id,
-        'fromId': localId,
-        'fromName': localName,
-        'text': text,
-        'createdAt': message.createdAt.toIso8601String(),
-      });
-      lastStatus = 'Message sent to ${peer.name}';
+      if (_shouldQueueInsteadOfDirect(peer)) {
+        _queueRemoteEnvelope(peer, outgoingHeader);
+        lastStatus = 'Queued message for ${peer.name}; waiting for phone poll';
+      } else {
+        await _sendEnvelope(peer, outgoingHeader);
+        lastStatus = 'Message sent to ${peer.name}';
+      }
       notifyListeners();
     } catch (error) {
+      _pollPreferredPeerIds.add(peer.id);
+      if (_queueRemoteEnvelope(peer, outgoingHeader)) {
+        _addMessage(
+          ChatMessage(
+            id: _makeId(),
+            peerId: peer.id,
+            text:
+                'Queued for ${peer.name}; it will deliver when the phone polls.',
+            kind: MessageKind.system,
+            outgoing: true,
+            createdAt: DateTime.now(),
+          ),
+        );
+        lastStatus = 'Queued message for ${peer.name}; waiting for phone poll';
+        notifyListeners();
+        return;
+      }
       broadcastNow();
-      _messages[peer.id]?.add(
+      _addMessage(
         ChatMessage(
           id: _makeId(),
           peerId: peer.id,
@@ -1622,7 +2767,8 @@ class LanChatService extends ChangeNotifier {
   }
 
   Future<void> pickAndSendFolder(PeerDevice peer) async {
-    final path = await FilePicker.platform.getDirectoryPath(dialogTitle: 'Choose folder to send');
+    final path = await FilePicker.platform
+        .getDirectoryPath(dialogTitle: 'Choose folder to send');
     if (path == null) {
       return;
     }
@@ -1630,8 +2776,19 @@ class LanChatService extends ChangeNotifier {
   }
 
   Future<void> sendFile(PeerDevice peer, File file) async {
+    if (!_isPeerTransportEnabled(peer)) {
+      lastStatus = '${peer.name} is disabled';
+      notifyListeners();
+      return;
+    }
+    final fileSize = await file.length();
+    if (fileSize > largeFileThresholdBytes) {
+      await _sendLargeFile(peer, file, fileSize);
+      return;
+    }
     final bytes = await file.readAsBytes();
-    final name = file.uri.pathSegments.isEmpty ? 'file' : file.uri.pathSegments.last;
+    final name =
+        file.uri.pathSegments.isEmpty ? 'file' : file.uri.pathSegments.last;
     final message = ChatMessage(
       id: _makeId(),
       peerId: peer.id,
@@ -1642,7 +2799,7 @@ class LanChatService extends ChangeNotifier {
       filePath: file.path,
       createdAt: DateTime.now(),
     );
-    _messages.putIfAbsent(peer.id, () => []).add(message);
+    _addMessage(message);
     notifyListeners();
 
     try {
@@ -1654,27 +2811,60 @@ class LanChatService extends ChangeNotifier {
         direction: TransferDirection.sending,
         totalBytes: bytes.length,
       );
-      await _sendEnvelope(
-        peer,
-        {
-          'type': 'file',
-          'id': message.id,
-          'fromId': localId,
-          'fromName': localName,
-          'fileName': name,
-          'byteLength': bytes.length,
-          'createdAt': message.createdAt.toIso8601String(),
-        },
-        body: bytes,
-        onProgress: (sentBytes, _) => _updateTransfer(message.id, sentBytes),
-      );
-      _completeTransfer(message.id);
-      lastStatus = 'File sent to ${peer.name}: $name';
+      final outgoingHeader = {
+        'type': 'file',
+        'id': message.id,
+        'fromId': localId,
+        'fromName': localName,
+        'fileName': name,
+        'byteLength': bytes.length,
+        'createdAt': message.createdAt.toIso8601String(),
+      };
+      if (_shouldQueueInsteadOfDirect(peer)) {
+        _queueRemoteEnvelope(peer, outgoingHeader, body: bytes);
+        _completeTransfer(message.id);
+        lastStatus = 'Queued file for ${peer.name}: $name';
+      } else {
+        await _sendEnvelope(
+          peer,
+          outgoingHeader,
+          body: bytes,
+          onProgress: (sentBytes, _) => _updateTransfer(message.id, sentBytes),
+        );
+        _completeTransfer(message.id);
+        lastStatus = 'File sent to ${peer.name}: $name';
+      }
       notifyListeners();
     } catch (error) {
       _failTransfer(message.id);
+      _pollPreferredPeerIds.add(peer.id);
+      final outgoingHeader = {
+        'type': 'file',
+        'id': message.id,
+        'fromId': localId,
+        'fromName': localName,
+        'fileName': name,
+        'byteLength': bytes.length,
+        'createdAt': message.createdAt.toIso8601String(),
+      };
+      if (_queueRemoteEnvelope(peer, outgoingHeader, body: bytes)) {
+        _addMessage(
+          ChatMessage(
+            id: _makeId(),
+            peerId: peer.id,
+            text:
+                'Queued file for ${peer.name}; it will deliver when the phone polls.',
+            kind: MessageKind.system,
+            outgoing: true,
+            createdAt: DateTime.now(),
+          ),
+        );
+        lastStatus = 'Queued file for ${peer.name}: $name';
+        notifyListeners();
+        return;
+      }
       broadcastNow();
-      _messages[peer.id]?.add(
+      _addMessage(
         ChatMessage(
           id: _makeId(),
           peerId: peer.id,
@@ -1689,7 +2879,116 @@ class LanChatService extends ChangeNotifier {
     }
   }
 
+  Future<void> _sendLargeFile(PeerDevice peer, File file, int fileSize) async {
+    final name =
+        file.uri.pathSegments.isEmpty ? 'file' : file.uri.pathSegments.last;
+    final message = ChatMessage(
+      id: _makeId(),
+      peerId: peer.id,
+      text: 'Sent large file $name',
+      kind: MessageKind.file,
+      outgoing: true,
+      fileName: name,
+      filePath: file.path,
+      createdAt: DateTime.now(),
+    );
+    _addMessage(message);
+    _beginTransfer(
+      id: message.id,
+      peerId: peer.id,
+      name: name,
+      kind: MessageKind.file,
+      direction: TransferDirection.sending,
+      totalBytes: fileSize,
+    );
+    lastStatus = 'Streaming large file to ${peer.name}: $name';
+    notifyListeners();
+
+    crypto.Digest? digest;
+    final hashSink = crypto.sha256.startChunkedConversion(
+      ChunkedConversionSink<crypto.Digest>.withCallback((digests) {
+        digest = digests.single;
+      }),
+    );
+    RandomAccessFile? input;
+    try {
+      input = await file.open();
+      var offset = 0;
+      var index = 0;
+      while (offset < fileSize) {
+        final remaining = fileSize - offset;
+        final length = min(largeFileChunkBytes, remaining);
+        final chunk = await input.read(length);
+        if (chunk.isEmpty) {
+          throw const FileSystemException(
+              'File ended before transfer completed');
+        }
+        hashSink.add(chunk);
+        final isLast = offset + chunk.length >= fileSize;
+        if (isLast) {
+          hashSink.close();
+        }
+        final outgoingHeader = {
+          'type': 'large-file-chunk',
+          'id': '${message.id}-$index',
+          'transferId': message.id,
+          'fromId': localId,
+          'fromName': localName,
+          'fileName': name,
+          'fileSize': fileSize,
+          'chunkIndex': index,
+          'chunkOffset': offset,
+          'chunkLength': chunk.length,
+          'chunkCount': (fileSize / largeFileChunkBytes).ceil(),
+          'byteLength': chunk.length,
+          'createdAt': message.createdAt.toIso8601String(),
+          if (isLast) 'sha256': digest?.toString() ?? '',
+        };
+        await _sendEnvelope(
+          peer,
+          outgoingHeader,
+          body: Uint8List.fromList(chunk),
+          connectTimeout: const Duration(seconds: 12),
+        );
+        offset += chunk.length;
+        index += 1;
+        _updateTransfer(message.id, offset);
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
+      _completeTransfer(message.id);
+      lastStatus = 'Large file sent to ${peer.name}: $name';
+      notifyListeners();
+    } catch (error) {
+      _failTransfer(message.id);
+      _addMessage(
+        ChatMessage(
+          id: _makeId(),
+          peerId: peer.id,
+          text:
+              'Large file send failed: ${_shortError(error)}. Large files need a direct reachable Wi-Fi/Tailscale connection.',
+          kind: MessageKind.system,
+          outgoing: true,
+          createdAt: DateTime.now(),
+        ),
+      );
+      lastStatus =
+          'Large file send failed to ${peer.name}: ${_shortError(error)}';
+      notifyListeners();
+    } finally {
+      try {
+        await input?.close();
+      } catch (_) {
+        return;
+      }
+    }
+  }
+
   Future<void> sendFolder(PeerDevice peer, Directory directory) async {
+    if (!_isPeerTransportEnabled(peer)) {
+      lastStatus = '${peer.name} is disabled';
+      notifyListeners();
+      return;
+    }
     final name = _safeFileName(_folderNameFromPath(directory.path));
     final message = ChatMessage(
       id: _makeId(),
@@ -1701,11 +3000,13 @@ class LanChatService extends ChangeNotifier {
       filePath: directory.path,
       createdAt: DateTime.now(),
     );
-    _messages.putIfAbsent(peer.id, () => []).add(message);
+    _addMessage(message);
     notifyListeners();
 
+    Uint8List? folderBytes;
     try {
       final bytes = await _zipDirectory(directory);
+      folderBytes = bytes;
       _beginTransfer(
         id: message.id,
         peerId: peer.id,
@@ -1714,9 +3015,36 @@ class LanChatService extends ChangeNotifier {
         direction: TransferDirection.sending,
         totalBytes: bytes.length,
       );
-      await _sendEnvelope(
-        peer,
-        {
+      final outgoingHeader = {
+        'type': 'folder',
+        'id': message.id,
+        'fromId': localId,
+        'fromName': localName,
+        'folderName': name,
+        'byteLength': bytes.length,
+        'createdAt': message.createdAt.toIso8601String(),
+      };
+      if (_shouldQueueInsteadOfDirect(peer)) {
+        _queueRemoteEnvelope(peer, outgoingHeader, body: bytes);
+        _completeTransfer(message.id);
+        lastStatus = 'Queued folder for ${peer.name}: $name';
+      } else {
+        await _sendEnvelope(
+          peer,
+          outgoingHeader,
+          body: bytes,
+          onProgress: (sentBytes, _) => _updateTransfer(message.id, sentBytes),
+        );
+        _completeTransfer(message.id);
+        lastStatus = 'Folder sent to ${peer.name}: $name';
+      }
+      notifyListeners();
+    } catch (error) {
+      _failTransfer(message.id);
+      _pollPreferredPeerIds.add(peer.id);
+      final bytes = folderBytes;
+      if (bytes != null) {
+        final outgoingHeader = {
           'type': 'folder',
           'id': message.id,
           'fromId': localId,
@@ -1724,17 +3052,26 @@ class LanChatService extends ChangeNotifier {
           'folderName': name,
           'byteLength': bytes.length,
           'createdAt': message.createdAt.toIso8601String(),
-        },
-        body: bytes,
-        onProgress: (sentBytes, _) => _updateTransfer(message.id, sentBytes),
-      );
-      _completeTransfer(message.id);
-      lastStatus = 'Folder sent to ${peer.name}: $name';
-      notifyListeners();
-    } catch (error) {
-      _failTransfer(message.id);
+        };
+        if (_queueRemoteEnvelope(peer, outgoingHeader, body: bytes)) {
+          _addMessage(
+            ChatMessage(
+              id: _makeId(),
+              peerId: peer.id,
+              text:
+                  'Queued folder for ${peer.name}; it will deliver when the phone polls.',
+              kind: MessageKind.system,
+              outgoing: true,
+              createdAt: DateTime.now(),
+            ),
+          );
+          lastStatus = 'Queued folder for ${peer.name}: $name';
+          notifyListeners();
+          return;
+        }
+      }
       broadcastNow();
-      _messages[peer.id]?.add(
+      _addMessage(
         ChatMessage(
           id: _makeId(),
           peerId: peer.id,
@@ -1754,26 +3091,70 @@ class LanChatService extends ChangeNotifier {
     Map<String, Object?> header, {
     Uint8List? body,
     void Function(int transferredBytes, int totalBytes)? onProgress,
+    Duration? connectTimeout,
   }) async {
-    final socket = await Socket.connect(peer.address, peer.port, timeout: const Duration(seconds: 8));
+    final timeout = connectTimeout ??
+        (peer.secureRemote
+            ? const Duration(milliseconds: 1500)
+            : const Duration(seconds: 8));
+    final socket = await Socket.connect(peer.host, peer.port, timeout: timeout);
     try {
-      final headerBytes = utf8.encode('${jsonEncode(header)}\n');
-      socket.add(headerBytes);
-      if (body != null) {
-        const chunkSize = 64 * 1024;
-        for (var offset = 0; offset < body.length; offset += chunkSize) {
-          final end = min(offset + chunkSize, body.length);
-          socket.add(Uint8List.sublistView(body, offset, end));
-          onProgress?.call(end, body.length);
-          if (offset % (1024 * 1024) == 0) {
-            await socket.flush();
-          }
-        }
-      }
-      await socket.flush();
+      await _writeEnvelopeToSocket(
+        socket,
+        peer: peer,
+        header: header,
+        body: body,
+        onProgress: onProgress,
+      );
     } finally {
       await socket.close();
     }
+  }
+
+  bool _shouldQueueInsteadOfDirect(PeerDevice peer) {
+    return peer.secureRemote && remoteSecurity.isUsable;
+  }
+
+  bool _isPeerTransportEnabled(PeerDevice peer) {
+    return tailscaleEnabled || peer.tunnelKind != RemoteTunnelKind.tailscale;
+  }
+
+  Future<void> _writeEnvelopeToSocket(
+    Socket socket, {
+    required PeerDevice peer,
+    required Map<String, Object?> header,
+    Uint8List? body,
+    void Function(int transferredBytes, int totalBytes)? onProgress,
+  }) async {
+    var outgoingHeader = header;
+    var outgoingBody = body;
+    if (peer.secureRemote || remoteSecurity.isUsable) {
+      final secureEnvelope = await RemoteCrypto.encryptEnvelope(
+        settings: remoteSecurity,
+        localId: localId,
+        localName: localName,
+        header: header,
+        body: body,
+        replyHosts: _localIPv4AddressText,
+      );
+      outgoingHeader = secureEnvelope.header;
+      outgoingBody = secureEnvelope.cipherText;
+    }
+    final headerBytes = utf8.encode('${jsonEncode(outgoingHeader)}\n');
+    socket.add(headerBytes);
+    if (outgoingBody != null) {
+      const chunkSize = 64 * 1024;
+      for (var offset = 0; offset < outgoingBody.length; offset += chunkSize) {
+        final end = min(offset + chunkSize, outgoingBody.length);
+        socket.add(Uint8List.sublistView(outgoingBody, offset, end));
+        onProgress?.call(min(end, body?.length ?? outgoingBody.length),
+            body?.length ?? outgoingBody.length);
+        if (offset % (1024 * 1024) == 0) {
+          await socket.flush();
+        }
+      }
+    }
+    await socket.flush();
   }
 
   void _handleDiscoveryEvent(RawSocketEvent event) {
@@ -1786,7 +3167,8 @@ class LanChatService extends ChangeNotifier {
     }
 
     try {
-      final payload = jsonDecode(utf8.decode(datagram.data)) as Map<String, dynamic>;
+      final payload =
+          jsonDecode(utf8.decode(datagram.data)) as Map<String, dynamic>;
       if (payload['type'] != 'hello' || payload['id'] == localId) {
         return;
       }
@@ -1798,7 +3180,9 @@ class LanChatService extends ChangeNotifier {
       final existing = peers[id];
       final updated = PeerDevice(
         id: id,
-        name: (payload['name'] as String?)?.trim().isNotEmpty == true ? payload['name'] as String : 'Unknown device',
+        name: (payload['name'] as String?)?.trim().isNotEmpty == true
+            ? payload['name'] as String
+            : 'Unknown device',
         platform: payload['platform'] as String? ?? 'unknown',
         address: datagram.address,
         port: payload['port'] as int? ?? transferPort,
@@ -1812,7 +3196,8 @@ class LanChatService extends ChangeNotifier {
           existing.address.address != updated.address.address ||
           existing.port != updated.port;
       if (changed) {
-        _setStatus('Found ${updated.name} at ${datagram.address.address}', notify: false);
+        _setStatus('Found ${updated.name} at ${datagram.address.address}',
+            notify: false);
         notifyListeners();
       }
     } catch (_) {
@@ -1822,107 +3207,61 @@ class LanChatService extends ChangeNotifier {
 
   Future<void> _handleIncomingSocket(Socket socket) async {
     File? temporaryBodyFile;
+    File? decryptedBodyFile;
+    var secureReceived = false;
+    Map<String, dynamic>? outerHeader;
     try {
-      final envelope = await _readIncomingEnvelope(socket);
+      var envelope = await _readIncomingEnvelope(socket);
       temporaryBodyFile = envelope.bodyFile;
+      if (envelope.header['type'] == secureEnvelopeType) {
+        secureReceived = true;
+        outerHeader = envelope.header;
+        envelope = await RemoteCrypto.decryptEnvelope(
+          settings: remoteSecurity,
+          envelope: envelope,
+          remoteAddress: socket.remoteAddress,
+        );
+        decryptedBodyFile = envelope.bodyFile;
+      }
       final header = envelope.header;
-      final fromId = header['fromId'] as String? ?? socket.remoteAddress.address;
-      final fromName = header['fromName'] as String? ?? socket.remoteAddress.address;
+      final fromId =
+          header['fromId'] as String? ?? socket.remoteAddress.address;
+      final fromName =
+          header['fromName'] as String? ?? socket.remoteAddress.address;
+      final replyHosts = _replyHostsFromSecureHeader(outerHeader);
 
-      peers.putIfAbsent(
-        fromId,
-        () => PeerDevice(
-          id: fromId,
-          name: fromName,
-          platform: 'unknown',
-          address: socket.remoteAddress,
-          port: transferPort,
-          lastSeen: DateTime.now(),
-        ),
+      if (header['type'] == 'poll') {
+        final peer = _pollPeerForIncomingRequest(
+          fromId: fromId,
+          fromName: fromName,
+          remoteAddress: socket.remoteAddress,
+          secureReceived: secureReceived,
+          replyHosts: replyHosts,
+        );
+        await _sendQueuedEnvelopeResponse(socket, peer.id, peer);
+        return;
+      }
+
+      final peerId = _upsertIncomingPeer(
+        fromId: fromId,
+        fromName: fromName,
+        remoteAddress: socket.remoteAddress,
+        secureReceived: secureReceived,
+        replyHosts: replyHosts,
       );
 
-      if (header['type'] == 'chat') {
-        final text = header['text'] as String? ?? '';
-        _messages.putIfAbsent(fromId, () => []).add(
-              ChatMessage(
-                id: header['id'] as String? ?? _makeId(),
-                peerId: fromId,
-                text: text,
-                kind: MessageKind.text,
-                outgoing: false,
-                createdAt: DateTime.tryParse(header['createdAt'] as String? ?? '') ?? DateTime.now(),
-              ),
-            );
-        lastStatus = 'Message received from $fromName';
-        NotificationService.instance.showMessage(fromName: fromName, text: text);
-      }
-
-      if (header['type'] == 'file') {
-        final fileName = _safeFileName(header['fileName'] as String? ?? 'received-file');
-        final bodyFile = envelope.bodyFile;
-        if (bodyFile == null) {
-          throw const FileSystemException('Missing received file body');
-        }
-        final incomingDir = await _incomingDirectory();
-        if (!await incomingDir.exists()) {
-          await incomingDir.create(recursive: true);
-        }
-        final file = File('${incomingDir.path}${Platform.pathSeparator}${DateTime.now().millisecondsSinceEpoch}-$fileName');
-        await bodyFile.copy(file.path);
-
-        _messages.putIfAbsent(fromId, () => []).add(
-              ChatMessage(
-                id: header['id'] as String? ?? _makeId(),
-                peerId: fromId,
-                text: 'Received $fileName',
-                kind: MessageKind.file,
-                outgoing: false,
-                fileName: fileName,
-                filePath: file.path,
-                createdAt: DateTime.tryParse(header['createdAt'] as String? ?? '') ?? DateTime.now(),
-              ),
-            );
-        lastStatus = 'File received from $fromName: $fileName';
-        NotificationService.instance.showFile(fromName: fromName, fileName: fileName);
-      }
-
-      if (header['type'] == 'folder') {
-        final folderName = _safeFileName(header['folderName'] as String? ?? 'received-folder');
-        final bodyFile = envelope.bodyFile;
-        if (bodyFile == null) {
-          throw const FileSystemException('Missing received folder body');
-        }
-        final incomingDir = await _incomingDirectory();
-        if (!await incomingDir.exists()) {
-          await incomingDir.create(recursive: true);
-        }
-        final folder = Directory(
-          '${incomingDir.path}${Platform.pathSeparator}${DateTime.now().millisecondsSinceEpoch}-$folderName',
-        );
-        await _extractFolderArchive(bodyFile, folder);
-
-        _messages.putIfAbsent(fromId, () => []).add(
-              ChatMessage(
-                id: header['id'] as String? ?? _makeId(),
-                peerId: fromId,
-                text: 'Received folder $folderName',
-                kind: MessageKind.folder,
-                outgoing: false,
-                fileName: folderName,
-                filePath: folder.path,
-                createdAt: DateTime.tryParse(header['createdAt'] as String? ?? '') ?? DateTime.now(),
-              ),
-            );
-        lastStatus = 'Folder received from $fromName: $folderName';
-        NotificationService.instance.showFolder(fromName: fromName, folderName: folderName);
-      }
-
+      await _handleDeliveredEnvelope(
+        peerId: peerId,
+        fromName: fromName,
+        envelope: envelope,
+      );
       notifyListeners();
     } catch (error) {
       lastStatus = 'Ignored dropped connection: ${_shortError(error)}';
       notifyListeners();
     } finally {
       try {
+        await decryptedBodyFile?.delete();
         await temporaryBodyFile?.delete();
       } catch (_) {
         // Temporary transfer cleanup can be skipped if the OS already removed it.
@@ -1931,13 +3270,556 @@ class LanChatService extends ChangeNotifier {
     }
   }
 
+  Future<void> _handleDeliveredEnvelope({
+    required String peerId,
+    required String fromName,
+    required IncomingEnvelope envelope,
+  }) async {
+    final header = envelope.header;
+    final envelopeId = header['id'] as String?;
+    if (envelopeId != null && envelopeId.isNotEmpty) {
+      final duplicateKey = '$peerId:$envelopeId';
+      if (!_deliveredIncomingIds.add(duplicateKey)) {
+        return;
+      }
+      if (_deliveredIncomingIds.length > 1000) {
+        _deliveredIncomingIds.remove(_deliveredIncomingIds.first);
+      }
+    }
+    if (header['type'] == 'chat') {
+      final text = header['text'] as String? ?? '';
+      _addMessage(
+        ChatMessage(
+          id: header['id'] as String? ?? _makeId(),
+          peerId: peerId,
+          text: text,
+          kind: MessageKind.text,
+          outgoing: false,
+          createdAt: DateTime.tryParse(header['createdAt'] as String? ?? '') ??
+              DateTime.now(),
+        ),
+      );
+      lastStatus = 'Message received from $fromName';
+      NotificationService.instance.showMessage(fromName: fromName, text: text);
+    }
+
+    if (header['type'] == 'large-file-chunk') {
+      await _handleLargeFileChunk(
+        peerId: peerId,
+        fromName: fromName,
+        header: header,
+        bodyFile: envelope.bodyFile,
+      );
+      return;
+    }
+
+    if (header['type'] == 'file') {
+      final fileName =
+          _safeFileName(header['fileName'] as String? ?? 'received-file');
+      final bodyFile = envelope.bodyFile;
+      if (bodyFile == null) {
+        throw const FileSystemException('Missing received file body');
+      }
+      final incomingDir = await _incomingDirectory();
+      if (!await incomingDir.exists()) {
+        await incomingDir.create(recursive: true);
+      }
+      final file = File(
+          '${incomingDir.path}${Platform.pathSeparator}${DateTime.now().millisecondsSinceEpoch}-$fileName');
+      await bodyFile.copy(file.path);
+
+      _addMessage(
+        ChatMessage(
+          id: header['id'] as String? ?? _makeId(),
+          peerId: peerId,
+          text: 'Received $fileName',
+          kind: MessageKind.file,
+          outgoing: false,
+          fileName: fileName,
+          filePath: file.path,
+          createdAt: DateTime.tryParse(header['createdAt'] as String? ?? '') ??
+              DateTime.now(),
+        ),
+      );
+      lastStatus = 'File received from $fromName: $fileName';
+      NotificationService.instance
+          .showFile(fromName: fromName, fileName: fileName);
+    }
+
+    if (header['type'] == 'folder') {
+      final folderName =
+          _safeFileName(header['folderName'] as String? ?? 'received-folder');
+      final bodyFile = envelope.bodyFile;
+      if (bodyFile == null) {
+        throw const FileSystemException('Missing received folder body');
+      }
+      final incomingDir = await _incomingDirectory();
+      if (!await incomingDir.exists()) {
+        await incomingDir.create(recursive: true);
+      }
+      final folder = Directory(
+        '${incomingDir.path}${Platform.pathSeparator}${DateTime.now().millisecondsSinceEpoch}-$folderName',
+      );
+      await _extractFolderArchive(bodyFile, folder);
+
+      _addMessage(
+        ChatMessage(
+          id: header['id'] as String? ?? _makeId(),
+          peerId: peerId,
+          text: 'Received folder $folderName',
+          kind: MessageKind.folder,
+          outgoing: false,
+          fileName: folderName,
+          filePath: folder.path,
+          createdAt: DateTime.tryParse(header['createdAt'] as String? ?? '') ??
+              DateTime.now(),
+        ),
+      );
+      lastStatus = 'Folder received from $fromName: $folderName';
+      NotificationService.instance
+          .showFolder(fromName: fromName, folderName: folderName);
+    }
+  }
+
+  Future<void> _handleLargeFileChunk({
+    required String peerId,
+    required String fromName,
+    required Map<String, dynamic> header,
+    required File? bodyFile,
+  }) async {
+    if (bodyFile == null) {
+      throw const FileSystemException('Missing large file chunk body');
+    }
+    final transferId =
+        header['transferId'] as String? ?? header['id'] as String?;
+    if (transferId == null || transferId.isEmpty) {
+      throw const FormatException('Missing large file transfer ID');
+    }
+    final fileName =
+        _safeFileName(header['fileName'] as String? ?? 'received-large-file');
+    final fileSize = header['fileSize'] as int? ?? 0;
+    final chunkIndex = header['chunkIndex'] as int? ?? 0;
+    final chunkOffset = header['chunkOffset'] as int? ?? 0;
+    final chunkLength = header['chunkLength'] as int? ?? 0;
+    if (fileSize <= largeFileThresholdBytes ||
+        chunkOffset < 0 ||
+        chunkLength <= 0 ||
+        chunkOffset + chunkLength > fileSize) {
+      throw const FormatException('Invalid large file chunk metadata');
+    }
+
+    var state = _largeFileReceives[transferId];
+    if (state == null) {
+      final incomingDir = await _incomingDirectory();
+      if (!await incomingDir.exists()) {
+        await incomingDir.create(recursive: true);
+      }
+      final file = File(
+          '${incomingDir.path}${Platform.pathSeparator}${DateTime.now().millisecondsSinceEpoch}-$fileName');
+      state = LargeFileReceiveState(
+        transferId: transferId,
+        peerId: peerId,
+        fileName: fileName,
+        file: file,
+        fileSize: fileSize,
+        createdAt: DateTime.tryParse(header['createdAt'] as String? ?? '') ??
+            DateTime.now(),
+      );
+      _largeFileReceives[transferId] = state;
+      _beginTransfer(
+        id: transferId,
+        peerId: peerId,
+        name: fileName,
+        kind: MessageKind.file,
+        direction: TransferDirection.receiving,
+        totalBytes: fileSize,
+      );
+    }
+
+    if (state.receivedChunks.contains(chunkIndex)) {
+      return;
+    }
+    if (chunkOffset != state.receivedBytes) {
+      throw FormatException(
+          'Large file chunk arrived out of order at $chunkOffset, expected ${state.receivedBytes}');
+    }
+
+    final chunk = await bodyFile.readAsBytes();
+    if (chunk.length != chunkLength) {
+      throw FormatException(
+          'Large file chunk length mismatch: ${chunk.length} of $chunkLength');
+    }
+    final output = await state.file.open(mode: FileMode.writeOnlyAppend);
+    try {
+      await output.writeFrom(chunk);
+      await output.flush();
+    } finally {
+      await output.close();
+    }
+
+    if (state.receivedChunks.add(chunkIndex)) {
+      state.receivedBytes += chunk.length;
+    }
+    final sha256 = header['sha256'] as String?;
+    if (sha256 != null && sha256.isNotEmpty) {
+      state.expectedSha256 = sha256;
+    }
+    _updateTransfer(transferId, state.receivedBytes);
+
+    if (state.receivedBytes < state.fileSize) {
+      lastStatus = 'Receiving large file from $fromName: $fileName';
+      return;
+    }
+
+    final expectedHash = state.expectedSha256;
+    if (expectedHash != null && expectedHash.isNotEmpty) {
+      final actualHash = await _sha256File(state.file);
+      if (actualHash != expectedHash) {
+        _largeFileReceives.remove(transferId);
+        _failTransfer(transferId);
+        try {
+          await state.file.delete();
+        } catch (_) {
+          // Leave cleanup best-effort when the OS keeps a handle briefly.
+        }
+        throw const FormatException('Large file hash verification failed');
+      }
+    }
+
+    _largeFileReceives.remove(transferId);
+    _completeTransfer(transferId);
+    _addMessage(
+      ChatMessage(
+        id: transferId,
+        peerId: peerId,
+        text: 'Received large file $fileName',
+        kind: MessageKind.file,
+        outgoing: false,
+        fileName: fileName,
+        filePath: state.file.path,
+        createdAt: state.createdAt,
+      ),
+    );
+    lastStatus = 'Large file received from $fromName: $fileName';
+    NotificationService.instance
+        .showFile(fromName: fromName, fileName: fileName);
+  }
+
+  Future<void> _sendQueuedEnvelopeResponse(
+      Socket socket, String peerId, PeerDevice peer) async {
+    if (!_isPeerTransportEnabled(peer)) {
+      await _writeEnvelopeToSocket(
+        socket,
+        peer: peer,
+        header: {
+          'type': 'noop',
+          'id': _makeId(),
+          'fromId': localId,
+          'fromName': localName,
+          'createdAt': DateTime.now().toIso8601String(),
+        },
+      );
+      return;
+    }
+    if (peer.secureRemote) {
+      _pollPreferredPeerIds.add(peerId);
+    }
+    final pending = _peekPendingEnvelope(peerId) ??
+        _peekPendingEnvelopeForPeerAlias(peerId, peer) ??
+        await _waitForPendingEnvelope(peerId) ??
+        _peekPendingEnvelopeForPeerAlias(peerId, peer);
+    await _writeEnvelopeToSocket(
+      socket,
+      peer: peer,
+      header: pending?.header ??
+          {
+            'type': 'noop',
+            'id': _makeId(),
+            'fromId': localId,
+            'fromName': localName,
+            'createdAt': DateTime.now().toIso8601String(),
+          },
+      body: pending?.body,
+    );
+    if (pending != null) {
+      final acknowledged = await _waitForDeliveryAck(socket, pending.id);
+      if (acknowledged) {
+        _removePendingEnvelope(pending);
+        lastStatus = 'Delivered queued item to ${peer.name}';
+        notifyListeners();
+      } else {
+        _removePendingEnvelope(pending);
+        lastStatus = 'Sent queued item to ${peer.name}';
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> _pollSecureRemotePeers() async {
+    if (!remoteSecurity.isUsable) {
+      return;
+    }
+    final remotePeers = peers.values
+        .where((peer) => peer.secureRemote && _isPeerTransportEnabled(peer))
+        .toList(growable: false);
+    await Future.wait(remotePeers.map(_pollSecureRemotePeer));
+  }
+
+  Future<bool> _waitForDeliveryAck(Socket socket, String pendingId) async {
+    if (pendingId.isEmpty) {
+      return false;
+    }
+    File? encryptedBodyFile;
+    File? decryptedBodyFile;
+    try {
+      final response = await _readIncomingEnvelope(socket)
+          .timeout(const Duration(seconds: 8));
+      encryptedBodyFile = response.bodyFile;
+      var envelope = response;
+      if (response.header['type'] == secureEnvelopeType) {
+        envelope = await RemoteCrypto.decryptEnvelope(
+          settings: remoteSecurity,
+          envelope: response,
+          remoteAddress: socket.remoteAddress,
+        );
+        decryptedBodyFile = envelope.bodyFile;
+      }
+      return envelope.header['type'] == 'ack' &&
+          envelope.header['ackId'] == pendingId;
+    } catch (_) {
+      return false;
+    } finally {
+      try {
+        await decryptedBodyFile?.delete();
+        await encryptedBodyFile?.delete();
+      } catch (_) {
+        // Ack temp cleanup is best-effort.
+      }
+    }
+  }
+
+  Future<void> _writeDeliveryAck(
+      Socket socket, PeerDevice peer, String? pendingId) async {
+    if (pendingId == null || pendingId.isEmpty) {
+      return;
+    }
+    await _writeEnvelopeToSocket(
+      socket,
+      peer: peer,
+      header: {
+        'type': 'ack',
+        'id': _makeId(),
+        'ackId': pendingId,
+        'fromId': localId,
+        'fromName': localName,
+        'createdAt': DateTime.now().toIso8601String(),
+      },
+    );
+    await socket.flush();
+  }
+
+  Future<void> _pollSecureRemotePeer(PeerDevice peer) async {
+    if (!_isPeerTransportEnabled(peer)) {
+      return;
+    }
+    if (!_activeRemotePolls.add(peer.id)) {
+      return;
+    }
+    Socket? socket;
+    File? encryptedBodyFile;
+    File? decryptedBodyFile;
+    try {
+      socket = await Socket.connect(peer.host, peer.port,
+          timeout: const Duration(seconds: 4));
+      await _writeEnvelopeToSocket(
+        socket,
+        peer: peer,
+        header: {
+          'type': 'poll',
+          'id': _makeId(),
+          'fromId': localId,
+          'fromName': localName,
+          'createdAt': DateTime.now().toIso8601String(),
+        },
+      );
+      final response = await _readIncomingEnvelope(socket);
+      encryptedBodyFile = response.bodyFile;
+      var envelope = response;
+      if (response.header['type'] == secureEnvelopeType) {
+        envelope = await RemoteCrypto.decryptEnvelope(
+          settings: remoteSecurity,
+          envelope: response,
+          remoteAddress: socket.remoteAddress,
+        );
+        decryptedBodyFile = envelope.bodyFile;
+      }
+      if (envelope.header['type'] == 'noop') {
+        return;
+      }
+      await _handleDeliveredEnvelope(
+        peerId: peer.id,
+        fromName: envelope.header['fromName'] as String? ?? peer.name,
+        envelope: envelope,
+      );
+      await _writeDeliveryAck(socket, peer, envelope.header['id'] as String?);
+      notifyListeners();
+    } catch (_) {
+      return;
+    } finally {
+      try {
+        await decryptedBodyFile?.delete();
+        await encryptedBodyFile?.delete();
+      } catch (_) {
+        // Temp cleanup failure should not block future polls.
+      }
+      socket?.destroy();
+      _activeRemotePolls.remove(peer.id);
+    }
+  }
+
+  String _upsertIncomingPeer({
+    required String fromId,
+    required String fromName,
+    required InternetAddress remoteAddress,
+    required bool secureReceived,
+    required List<String> replyHosts,
+  }) {
+    final remoteHost = _bestIncomingReplyHost(remoteAddress, replyHosts);
+    final manualPeer = secureReceived
+        ? _matchingManualRemotePeer(
+            fromId: fromId,
+            fromName: fromName,
+            remoteHost: remoteHost,
+            replyHosts: replyHosts,
+          )
+        : null;
+    final peerId = manualPeer?.id ?? fromId;
+    final existing = peers[peerId];
+    if (secureReceived && manualPeer != null) {
+      _pollPreferredPeerIds.add(peerId);
+    }
+    final tunnelKind = manualPeer?.tunnelKind ??
+        (remoteHost.startsWith('100.') ? RemoteTunnelKind.tailscale : null);
+    peers[peerId] = PeerDevice(
+      id: peerId,
+      name: existing?.name ?? manualPeer?.name ?? fromName,
+      platform: existing?.platform ??
+          manualPeer?.platform ??
+          tunnelKind?.name ??
+          'unknown',
+      address: remoteAddress,
+      host: manualPeer?.host ?? existing?.host ?? remoteHost,
+      port: existing?.port ?? manualPeer?.port ?? transferPort,
+      lastSeen: DateTime.now(),
+      secureRemote: secureReceived ||
+          existing?.secureRemote == true ||
+          manualPeer != null,
+      tunnelKind: existing?.tunnelKind ?? manualPeer?.tunnelKind ?? tunnelKind,
+    );
+    return peerId;
+  }
+
+  PeerDevice _pollPeerForIncomingRequest({
+    required String fromId,
+    required String fromName,
+    required InternetAddress remoteAddress,
+    required bool secureReceived,
+    required List<String> replyHosts,
+  }) {
+    final remoteHost = _bestIncomingReplyHost(remoteAddress, replyHosts);
+    if (secureReceived) {
+      final manualPeer = _matchingManualRemotePeer(
+        fromId: fromId,
+        fromName: fromName,
+        remoteHost: remoteHost,
+        replyHosts: replyHosts,
+      );
+      if (manualPeer != null) {
+        peers[manualPeer.id] = manualPeer.copyWith(lastSeen: DateTime.now());
+        return peers[manualPeer.id]!;
+      }
+    }
+    return PeerDevice(
+      id: fromId,
+      name: fromName,
+      platform: remoteHost.startsWith('100.') ? 'tailscale' : 'direct',
+      address: remoteAddress,
+      host: remoteHost,
+      port: transferPort,
+      lastSeen: DateTime.now(),
+      secureRemote: secureReceived,
+      tunnelKind:
+          remoteHost.startsWith('100.') ? RemoteTunnelKind.tailscale : null,
+    );
+  }
+
+  PeerDevice? _matchingManualRemotePeer({
+    required String fromId,
+    required String fromName,
+    required String remoteHost,
+    required List<String> replyHosts,
+  }) {
+    final securePeers =
+        peers.values.where((peer) => peer.secureRemote).toList(growable: false);
+    final candidates = {
+      remoteHost.toLowerCase(),
+      ...replyHosts.map((host) => host.toLowerCase()),
+    };
+    for (final peer in securePeers) {
+      final peerHost = peer.host.toLowerCase();
+      if (peer.id == fromId || candidates.contains(peerHost)) {
+        return peer;
+      }
+    }
+    for (final peer in securePeers) {
+      if (peer.name.trim().isNotEmpty &&
+          peer.name.toLowerCase() == fromName.toLowerCase()) {
+        return peer;
+      }
+    }
+    if (securePeers.length == 1) {
+      return securePeers.single;
+    }
+    return null;
+  }
+
+  String _bestIncomingReplyHost(
+      InternetAddress remoteAddress, List<String> replyHosts) {
+    final candidates = [
+      ...replyHosts,
+      remoteAddress.address,
+    ].where(_isValidRemoteHost).toList(growable: false);
+    for (final host in candidates) {
+      if (host.startsWith('100.')) {
+        return host;
+      }
+    }
+    for (final host in candidates) {
+      if (!host.startsWith('127.') && host != '::1' && host != '0.0.0.0') {
+        return host;
+      }
+    }
+    return remoteAddress.address;
+  }
+
+  List<String> _replyHostsFromSecureHeader(Map<String, dynamic>? header) {
+    final values = header?['replyHosts'];
+    if (values is! List) {
+      return const [];
+    }
+    return values
+        .whereType<String>()
+        .where(_isValidRemoteHost)
+        .toList(growable: false);
+  }
+
   Future<Directory> _incomingDirectory() async {
     final configured = _downloadDirectory;
     if (configured != null && configured.trim().isNotEmpty) {
       return Directory(configured);
     }
     final directory = await getApplicationDocumentsDirectory();
-    return Directory('${directory.path}${Platform.pathSeparator}WifiChatShare');
+    return Directory('${directory.path}${Platform.pathSeparator}WifiChatPro');
   }
 
   Future<Uint8List> _zipDirectory(Directory directory) async {
@@ -1946,7 +3828,8 @@ class LanChatService extends ChangeNotifier {
     }
 
     final archive = Archive();
-    await for (final entity in directory.list(recursive: true, followLinks: false)) {
+    await for (final entity
+        in directory.list(recursive: true, followLinks: false)) {
       final relativePath = _relativeArchivePath(directory.path, entity.path);
       if (relativePath.isEmpty) {
         continue;
@@ -1990,7 +3873,10 @@ class LanChatService extends ChangeNotifier {
   Future<List<InternetAddress>> _broadcastTargets() async {
     final targets = <String>{'255.255.255.255'};
     for (final peer in peers.values) {
-      targets.add(peer.address.address);
+      final address = peer.address.address;
+      if (address != '0.0.0.0') {
+        targets.add(address);
+      }
     }
     for (final address in await _localIPv4Addresses()) {
       final parts = address.address.split('.');
@@ -2023,24 +3909,37 @@ class LanChatService extends ChangeNotifier {
           if (split > 0) {
             headerBuilder.add(Uint8List.sublistView(chunk, 0, split));
           }
-          header = jsonDecode(utf8.decode(headerBuilder.takeBytes())) as Map<String, dynamic>;
+          header = jsonDecode(utf8.decode(headerBuilder.takeBytes()))
+              as Map<String, dynamic>;
           expectedBodyLength = header['byteLength'] as int? ?? 0;
+          if (expectedBodyLength == 0) {
+            return IncomingEnvelope(header: header, bodyFile: null);
+          }
           if (expectedBodyLength > 0) {
             final type = header['type'] as String?;
-            final peerId = header['fromId'] as String? ?? socket.remoteAddress.address;
-            final name = type == 'folder'
-                ? _safeFileName(header['folderName'] as String? ?? 'received-folder')
-                : _safeFileName(header['fileName'] as String? ?? 'received-file');
-            final kind = type == 'folder' ? MessageKind.folder : MessageKind.file;
-            transferId = header['id'] as String? ?? _makeId();
-            _beginTransfer(
-              id: transferId,
-              peerId: peerId,
-              name: name,
-              kind: kind,
-              direction: TransferDirection.receiving,
-              totalBytes: expectedBodyLength,
-            );
+            final displayType = type == secureEnvelopeType
+                ? header['innerType'] as String?
+                : type;
+            final peerId =
+                header['fromId'] as String? ?? socket.remoteAddress.address;
+            final name = displayType == 'folder'
+                ? _safeFileName(
+                    header['folderName'] as String? ?? 'received-folder')
+                : _safeFileName(
+                    header['fileName'] as String? ?? 'received-file');
+            final kind =
+                displayType == 'folder' ? MessageKind.folder : MessageKind.file;
+            if (displayType != 'large-file-chunk') {
+              transferId = header['id'] as String? ?? _makeId();
+              _beginTransfer(
+                id: transferId,
+                peerId: peerId,
+                name: name,
+                kind: kind,
+                direction: TransferDirection.receiving,
+                totalBytes: expectedBodyLength,
+              );
+            }
             bodyFile = await _createTransferTempFile();
             bodySink = bodyFile.openWrite();
           }
@@ -2056,6 +3955,15 @@ class LanChatService extends ChangeNotifier {
           if (id != null) {
             _updateTransfer(id, receivedBodyLength);
           }
+          if (receivedBodyLength >= expectedBodyLength) {
+            await bodySink?.flush();
+            await bodySink?.close();
+            final id = transferId;
+            if (id != null) {
+              _completeTransfer(id);
+            }
+            return IncomingEnvelope(header: header, bodyFile: bodyFile);
+          }
         }
       }
 
@@ -2067,7 +3975,8 @@ class LanChatService extends ChangeNotifier {
         throw const FormatException('Missing transfer header');
       }
       if (expectedBodyLength > 0 && receivedBodyLength != expectedBodyLength) {
-        throw FormatException('Incomplete transfer: received $receivedBodyLength of $expectedBodyLength bytes');
+        throw FormatException(
+            'Incomplete transfer: received $receivedBodyLength of $expectedBodyLength bytes');
       }
       final id = transferId;
       if (id != null) {
@@ -2085,11 +3994,13 @@ class LanChatService extends ChangeNotifier {
 
   Future<File> _createTransferTempFile() async {
     final directory = await getTemporaryDirectory();
-    final transferDir = Directory('${directory.path}${Platform.pathSeparator}WifiChatShareTransfers');
+    final transferDir = Directory(
+        '${directory.path}${Platform.pathSeparator}WifiChatProTransfers');
     if (!await transferDir.exists()) {
       await transferDir.create(recursive: true);
     }
-    return File('${transferDir.path}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}-${_makeId()}.bin');
+    return File(
+        '${transferDir.path}${Platform.pathSeparator}${DateTime.now().microsecondsSinceEpoch}-${_makeId()}.bin');
   }
 
   void _removeStalePeers() {
@@ -2119,6 +4030,7 @@ class LanChatService extends ChangeNotifier {
     _announceTimer?.cancel();
     _cleanupTimer?.cancel();
     _healthTimer?.cancel();
+    _remotePollTimer?.cancel();
     _udpSocket?.close();
     _server?.close();
     super.dispose();
@@ -2130,7 +4042,8 @@ class NotificationService {
 
   static final NotificationService instance = NotificationService._();
 
-  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
   bool _initialized = false;
   bool _enabled = true;
   int _nextId = 1;
@@ -2144,8 +4057,8 @@ class NotificationService {
       const initializationSettings = InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
         windows: WindowsInitializationSettings(
-          appName: 'Wifi Chat Share',
-          appUserModelId: 'com.neoapps.wifichatshare',
+          appName: 'Wifi Chat Pro',
+          appUserModelId: 'com.neoapps.wifichatpro',
           guid: '8d99c1d4-5424-45ce-b4f6-0215684b3c1d',
         ),
       );
@@ -2166,21 +4079,24 @@ class NotificationService {
     await _requestPermission();
   }
 
-  Future<void> showMessage({required String fromName, required String text}) async {
+  Future<void> showMessage(
+      {required String fromName, required String text}) async {
     await _show(
       title: 'Message from $fromName',
       body: text.isEmpty ? 'New message' : text,
     );
   }
 
-  Future<void> showFile({required String fromName, required String fileName}) async {
+  Future<void> showFile(
+      {required String fromName, required String fileName}) async {
     await _show(
       title: 'File from $fromName',
       body: fileName,
     );
   }
 
-  Future<void> showFolder({required String fromName, required String folderName}) async {
+  Future<void> showFolder(
+      {required String fromName, required String folderName}) async {
     await _show(
       title: 'Folder from $fromName',
       body: folderName,
@@ -2204,8 +4120,8 @@ class NotificationService {
         body: safeBody,
         notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
-            'wifi_chat_share_events',
-            'Wifi Chat Share',
+            'wifi_chat_pro_events',
+            'Wifi Chat Pro',
             channelDescription: 'Incoming chat messages and shared files',
             importance: Importance.high,
             priority: Priority.high,
@@ -2223,7 +4139,8 @@ class NotificationService {
   Future<void> _requestPermission() async {
     try {
       await _plugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
           ?.requestNotificationsPermission();
     } catch (_) {
       return;
@@ -2236,7 +4153,7 @@ class WindowsTrayBridge {
 
   static final WindowsTrayBridge instance = WindowsTrayBridge._();
 
-  static const MethodChannel _channel = MethodChannel('wifi_chat_share/tray');
+  static const MethodChannel _channel = MethodChannel('wifi_chat_pro/tray');
 
   LanChatService? _service;
   VoidCallback? _listener;
@@ -2278,7 +4195,8 @@ class WindowsTrayBridge {
 
   Future<void> _updatePeers(LanChatService service) async {
     final peers = service.visiblePeers
-        .map((peer) => '${peer.name} - ${peer.platformLabel} - ${peer.address.address}')
+        .map((peer) =>
+            '${peer.name} - ${peer.platformLabel} - ${peer.hostLabel}')
         .toList(growable: false);
     try {
       await _channel.invokeMethod<void>('updatePeers', peers);
@@ -2293,9 +4211,10 @@ class WindowsStartupService {
 
   static final WindowsStartupService instance = WindowsStartupService._();
 
-  static const String _runKey = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run';
-  static const String _valueName = 'WifiChatShare';
-  static const String _startupFileName = 'WifiChatShare.cmd';
+  static const String _runKey =
+      r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run';
+  static const String _valueName = 'WifiChatPro';
+  static const String _startupFileName = 'WifiChatPro.cmd';
 
   Future<bool> setEnabled(bool value) async {
     if (!Platform.isWindows) {
@@ -2366,7 +4285,7 @@ class WindowsDesktopTools {
     if (!Platform.isWindows) {
       return;
     }
-    final script = _scriptPath('Allow_WifiChatShare_Firewall.ps1');
+    final script = _scriptPath('Allow_WifiChatPro_Firewall.ps1');
     final command =
         'Start-Process -FilePath powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File ${_quoteForPowerShell(script)}"';
     await Process.start(
@@ -2380,7 +4299,7 @@ class WindowsDesktopTools {
     if (!Platform.isWindows) {
       return;
     }
-    final script = _scriptPath('Test_WifiChatShare_Port.ps1');
+    final script = _scriptPath('Test_WifiChatPro_Port.ps1');
     final command =
         'Start-Process -FilePath powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -NoExit -File ${_quoteForPowerShell(script)}"';
     await Process.start(
@@ -2402,16 +4321,18 @@ class WindowsDesktopTools {
 class AndroidQuickSettingsService {
   AndroidQuickSettingsService._();
 
-  static final AndroidQuickSettingsService instance = AndroidQuickSettingsService._();
+  static final AndroidQuickSettingsService instance =
+      AndroidQuickSettingsService._();
 
-  static const MethodChannel _channel = MethodChannel('wifi_chat_share/android');
+  static const MethodChannel _channel = MethodChannel('wifi_chat_pro/android');
 
   Future<bool> requestTile() async {
     if (!Platform.isAndroid) {
       return false;
     }
     try {
-      return await _channel.invokeMethod<bool>('requestQuickSettingsTile') ?? false;
+      return await _channel.invokeMethod<bool>('requestQuickSettingsTile') ??
+          false;
     } catch (_) {
       return false;
     }
@@ -2419,23 +4340,54 @@ class AndroidQuickSettingsService {
 }
 
 class PeerDevice {
-  const PeerDevice({
+  PeerDevice({
     required this.id,
     required this.name,
     required this.platform,
     required this.address,
     required this.port,
     required this.lastSeen,
-  });
+    String? host,
+    this.secureRemote = false,
+    this.tunnelKind,
+  }) : host = host ?? address.address;
 
   final String id;
   final String name;
   final String platform;
   final InternetAddress address;
+  final String host;
   final int port;
   final DateTime lastSeen;
+  final bool secureRemote;
+  final RemoteTunnelKind? tunnelKind;
 
-  bool get isFresh => DateTime.now().difference(lastSeen) < const Duration(seconds: 30);
+  PeerDevice copyWith({
+    String? id,
+    String? name,
+    String? platform,
+    InternetAddress? address,
+    String? host,
+    int? port,
+    DateTime? lastSeen,
+    bool? secureRemote,
+    RemoteTunnelKind? tunnelKind,
+  }) {
+    return PeerDevice(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      platform: platform ?? this.platform,
+      address: address ?? this.address,
+      host: host ?? this.host,
+      port: port ?? this.port,
+      lastSeen: lastSeen ?? this.lastSeen,
+      secureRemote: secureRemote ?? this.secureRemote,
+      tunnelKind: tunnelKind ?? this.tunnelKind,
+    );
+  }
+
+  bool get isFresh =>
+      DateTime.now().difference(lastSeen) < const Duration(seconds: 30);
 
   String get platformLabel {
     switch (platform) {
@@ -2449,13 +4401,77 @@ class PeerDevice {
         return 'Android phone';
       case 'ios':
         return 'iPhone';
+      case 'tailscale':
+        return 'Tailscale peer';
+      case 'wireguard':
+        return 'WireGuard peer';
+      case 'direct':
+        return 'Direct peer';
       default:
-        return 'Device';
+        return secureRemote ? 'Remote device' : 'Device';
     }
+  }
+
+  String get hostLabel => host.isNotEmpty ? host : address.address;
+
+  String get securityLabel {
+    if (!secureRemote) {
+      return 'LAN';
+    }
+    return tunnelKind == null ? 'secure remote' : '${tunnelKind!.label} secure';
   }
 }
 
+class RemoteSecuritySettings {
+  const RemoteSecuritySettings({
+    required this.enabled,
+    required this.userId,
+    required this.password,
+  });
+
+  final bool enabled;
+  final String userId;
+  final String password;
+
+  static const empty = RemoteSecuritySettings(
+    enabled: false,
+    userId: '',
+    password: '',
+  );
+
+  bool get isUsable => enabled && userId.isNotEmpty && password.isNotEmpty;
+}
+
 enum MessageKind { text, file, folder, system }
+
+enum RemoteTunnelKind {
+  tailscale('Tailscale', 'Tailscale IP or MagicDNS name'),
+  wireguard('WireGuard', 'WireGuard tunnel IP'),
+  direct('Direct', 'IP address or hostname');
+
+  const RemoteTunnelKind(this.label, this.hostLabel);
+
+  final String label;
+  final String hostLabel;
+}
+
+extension RemoteTunnelKindX on RemoteTunnelKind {
+  String get storageValue => name;
+
+  static RemoteTunnelKind? fromStorage(String? value) {
+    switch (value) {
+      case 'tailscale':
+        return RemoteTunnelKind.tailscale;
+      case 'wireguard':
+        return RemoteTunnelKind.wireguard;
+      case 'custom':
+      case 'direct':
+        return RemoteTunnelKind.direct;
+      default:
+        return null;
+    }
+  }
+}
 
 enum TransferDirection {
   sending('Sending'),
@@ -2464,6 +4480,27 @@ enum TransferDirection {
   const TransferDirection(this.label);
 
   final String label;
+}
+
+class LargeFileReceiveState {
+  LargeFileReceiveState({
+    required this.transferId,
+    required this.peerId,
+    required this.fileName,
+    required this.file,
+    required this.fileSize,
+    required this.createdAt,
+  });
+
+  final String transferId;
+  final String peerId;
+  final String fileName;
+  final File file;
+  final int fileSize;
+  final DateTime createdAt;
+  final Set<int> receivedChunks = {};
+  int receivedBytes = 0;
+  String? expectedSha256;
 }
 
 class ChatMessage {
@@ -2486,6 +4523,51 @@ class ChatMessage {
   final DateTime createdAt;
   final String? fileName;
   final String? filePath;
+
+  Map<String, Object?> toJson() {
+    return {
+      'id': id,
+      'peerId': peerId,
+      'text': text,
+      'kind': kind.name,
+      'outgoing': outgoing,
+      'createdAt': createdAt.toIso8601String(),
+      'fileName': fileName,
+      'filePath': filePath,
+    };
+  }
+
+  static ChatMessage? fromJson(Map<String, dynamic> value) {
+    final id = value['id'] as String?;
+    final peerId = value['peerId'] as String?;
+    final text = value['text'] as String?;
+    final kindName = value['kind'] as String?;
+    final createdAt = DateTime.tryParse(value['createdAt'] as String? ?? '') ??
+        DateTime.now();
+    if (id == null || peerId == null || text == null || kindName == null) {
+      return null;
+    }
+    MessageKind? kind;
+    for (final candidate in MessageKind.values) {
+      if (candidate.name == kindName) {
+        kind = candidate;
+        break;
+      }
+    }
+    if (kind == null) {
+      return null;
+    }
+    return ChatMessage(
+      id: id,
+      peerId: peerId,
+      text: text,
+      kind: kind,
+      outgoing: value['outgoing'] as bool? ?? false,
+      createdAt: createdAt,
+      fileName: value['fileName'] as String?,
+      filePath: value['filePath'] as String?,
+    );
+  }
 }
 
 class IncomingEnvelope {
@@ -2549,6 +4631,12 @@ IconData _platformIcon(String platform) {
       return Icons.android;
     case 'ios':
       return Icons.phone_iphone;
+    case 'tailscale':
+      return Icons.hub_outlined;
+    case 'wireguard':
+      return Icons.vpn_key_outlined;
+    case 'direct':
+      return Icons.vpn_lock_outlined;
     default:
       return Icons.devices;
   }
@@ -2591,7 +4679,9 @@ Future<List<InternetAddress>> _localIPv4Addresses() async {
       includeLoopback: false,
       type: InternetAddressType.IPv4,
     );
-    return interfaces.expand((interface) => interface.addresses).where((address) {
+    return interfaces
+        .expand((interface) => interface.addresses)
+        .where((address) {
       final value = address.address;
       return !value.startsWith('127.') && !value.startsWith('169.254.');
     }).toList(growable: false);
@@ -2626,14 +4716,35 @@ String _safeFileName(String name) {
   return sanitized.isEmpty ? 'received-file' : sanitized;
 }
 
+bool _isValidRemoteHost(String value) {
+  final host = value.trim();
+  if (host.isEmpty || host.length > 253 || host.contains('://')) {
+    return false;
+  }
+  if (InternetAddress.tryParse(host) != null) {
+    return true;
+  }
+  final labels = host.split('.');
+  return labels.every(
+    (label) =>
+        label.isNotEmpty &&
+        label.length <= 63 &&
+        RegExp(r'^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$').hasMatch(label),
+  );
+}
+
 String _folderNameFromPath(String path) {
   final normalized = path.replaceAll('\\', '/');
-  final parts = normalized.split('/').where((part) => part.trim().isNotEmpty).toList(growable: false);
+  final parts = normalized
+      .split('/')
+      .where((part) => part.trim().isNotEmpty)
+      .toList(growable: false);
   return parts.isEmpty ? 'folder' : parts.last;
 }
 
 String _relativeArchivePath(String basePath, String filePath) {
-  final normalizedBase = basePath.replaceAll('\\', '/').replaceFirst(RegExp(r'/+$'), '');
+  final normalizedBase =
+      basePath.replaceAll('\\', '/').replaceFirst(RegExp(r'/+$'), '');
   final normalizedFile = filePath.replaceAll('\\', '/');
   if (!normalizedFile.startsWith('$normalizedBase/')) {
     return _folderNameFromPath(filePath);
@@ -2662,6 +4773,51 @@ String _copyTextForMessage(ChatMessage message) {
     return parts.join('\n');
   }
   return message.text;
+}
+
+String _chatTranscript(PeerDevice peer, List<ChatMessage> messages) {
+  final buffer = StringBuffer()
+    ..writeln('Wifi Chat Pro chat export')
+    ..writeln('Peer: ${peer.name}')
+    ..writeln('Address: ${peer.hostLabel}')
+    ..writeln('Exported: ${DateTime.now().toLocal().toIso8601String()}')
+    ..writeln('');
+
+  for (final message in messages) {
+    final when = message.createdAt.toLocal().toIso8601String();
+    final sender = message.kind == MessageKind.system
+        ? 'System'
+        : message.outgoing
+            ? 'Me'
+            : peer.name;
+    buffer.write('[$when] $sender');
+    if (message.kind == MessageKind.file) {
+      buffer.write(' [file]');
+    } else if (message.kind == MessageKind.folder) {
+      buffer.write(' [folder]');
+    }
+    buffer.writeln(': ${message.text}');
+    if ((message.fileName ?? '').trim().isNotEmpty) {
+      buffer.writeln('  Name: ${message.fileName}');
+    }
+    if ((message.filePath ?? '').trim().isNotEmpty) {
+      buffer.writeln('  Path: ${message.filePath}');
+    }
+  }
+  return buffer.toString();
+}
+
+Future<String> _sha256File(File file) async {
+  crypto.Digest? digest;
+  final digestSink = ChunkedConversionSink<crypto.Digest>.withCallback(
+    (digests) => digest = digests.single,
+  );
+  final hashSink = crypto.sha256.startChunkedConversion(digestSink);
+  await for (final chunk in file.openRead()) {
+    hashSink.add(chunk);
+  }
+  hashSink.close();
+  return digest.toString();
 }
 
 String _timeLabel(DateTime time) {

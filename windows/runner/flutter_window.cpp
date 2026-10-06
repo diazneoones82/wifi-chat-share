@@ -58,7 +58,7 @@ bool FlutterWindow::OnCreate() {
 
   tray_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          flutter_controller_->engine()->messenger(), "wifi_chat_share/tray",
+          flutter_controller_->engine()->messenger(), "wifi_chat_pro/tray",
           &flutter::StandardMethodCodec::GetInstance());
   tray_channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
@@ -168,7 +168,7 @@ void FlutterWindow::AddTrayIcon(HWND hwnd) {
   data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
   data.uCallbackMessage = kTrayMessage;
   data.hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON));
-  wcscpy_s(data.szTip, L"Wifi Chat Share");
+  wcscpy_s(data.szTip, L"Wifi Chat Pro");
 
   tray_icon_added_ = Shell_NotifyIcon(NIM_ADD, &data) == TRUE;
   if (tray_icon_added_) {
@@ -209,7 +209,7 @@ void FlutterWindow::ShowTrayMenu(HWND hwnd) {
     return;
   }
 
-  AppendMenu(menu, MF_STRING, kTrayShowCommand, L"Show Wifi Chat Share");
+  AppendMenu(menu, MF_STRING, kTrayShowCommand, L"Show Wifi Chat Pro");
   AppendMenu(menu, MF_STRING, kTrayRefreshCommand, L"Refresh nearby devices");
   AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
 

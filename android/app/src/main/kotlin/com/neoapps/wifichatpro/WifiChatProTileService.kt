@@ -1,4 +1,4 @@
-package com.neoapps.wifichatshare
+package com.neoapps.wifichatpro
 
 import android.app.PendingIntent
 import android.content.ComponentName
@@ -8,7 +8,7 @@ import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 
-class WifiChatShareTileService : TileService() {
+class WifiChatProTileService : TileService() {
     override fun onStartListening() {
         super.onStartListening()
         updateTileState()
@@ -53,7 +53,7 @@ class WifiChatShareTileService : TileService() {
     private fun updateTileState() {
         val tile = qsTile ?: return
         val active = MainActivity.isTileActive(this)
-        tile.label = "Wifi Chat Share"
+        tile.label = "Wifi Chat Pro"
         tile.subtitle = if (active) "Tap to close" else "Tap to open"
         tile.state = if (active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         tile.updateTile()
@@ -64,7 +64,7 @@ class WifiChatShareTileService : TileService() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 requestListeningState(
                     context,
-                    ComponentName(context, WifiChatShareTileService::class.java),
+                    ComponentName(context, WifiChatProTileService::class.java),
                 )
             }
         }

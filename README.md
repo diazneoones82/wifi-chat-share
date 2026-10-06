@@ -1,8 +1,8 @@
-# Wifi Chat Share
+# Wifi Chat Pro
 
-Wifi Chat Share is a cross-platform LAN chat and file sharing app built with Flutter. It lets Windows PCs, Macs, Linux desktops, Android phones, and iPhones find each other on the same Wi-Fi network, then exchange messages and any file type directly between devices.
+Wifi Chat Pro is a cross-platform LAN chat and file sharing app built with Flutter. It lets Windows PCs, Macs, Linux desktops, Android phones, and iPhones find each other on the same Wi-Fi network, then exchange messages and any file type directly between devices.
 
-No cloud server is used. Every device that should appear in the list must have Wifi Chat Share open on the same Wi-Fi/LAN.
+No cloud server is used. Every device that should appear in the list must have Wifi Chat Pro open on the same Wi-Fi/LAN.
 
 ## Features
 
@@ -10,8 +10,10 @@ No cloud server is used. Every device that should appear in the list must have W
 - One-to-one chat
 - Copy sent or received message text from the chat bubbles
 - Share pictures, videos, ZIP archives, Microsoft Office files, documents, installers, and any other file format
-- Share whole folders; Wifi Chat Share packages the selected folder internally and restores it as a folder on the receiving device
+- Share whole folders; Wifi Chat Pro packages the selected folder internally and restores it as a folder on the receiving device
 - File and folder transfers show live progress bars with percentage while sending or receiving
+- Secure remote-IP peers for tunnel/public-IP connections
+- End-to-end encrypted remote chat, file, and folder payloads using a shared user ID, password, and Authenticator-compatible TOTP MFA
 - Received-file save location selector on desktop
 - Default received-file location under Documents/app storage when no folder is selected
 - Light, dark, and Matrix theme options
@@ -34,18 +36,56 @@ If one device can see or send to another but replies fail, the receiving device 
 ## Using The App
 
 1. Connect all devices to the same Wi-Fi network.
-2. Open Wifi Chat Share on every device.
+2. Open Wifi Chat Pro on every device.
 3. Allow local network, firewall, and notification prompts when asked.
 4. Wait a few seconds for devices to appear.
 5. Select a nearby device.
 6. Type a message, choose a file, or choose a folder to send.
 7. Use Refresh to remove devices that have closed the app or left the network.
 
-The app can only discover devices that are also running Wifi Chat Share. Operating systems do not allow an app to silently list every phone or computer on a network.
+The app can only discover devices that are also running Wifi Chat Pro. Operating systems do not allow an app to silently list every phone or computer on a network.
 
 On Windows, right-click a device row and choose Delete to hide it from Nearby devices until the next Refresh. On Android, long-press a device row and choose Delete. Use the delete-sweep button beside Nearby devices to clear the whole list until Refresh.
 
 The top status bar shows **Ping IP** for the current device. Use that address from another PC or phone when testing basic network reachability with `ping`.
+
+## Secure Remote IP Over The Internet
+
+For internet use, put both devices on a secure tunnel first, then add the peer by tunnel IP in Wifi Chat Pro. Recommended tunnel choices are:
+
+- WireGuard: self-hosted VPN using modern small-codebase cryptography.
+- Tailscale or ZeroTier: managed WireGuard-style mesh networking when you do not want to maintain public port forwarding. Wifi Chat Pro has a Tailscale mode that accepts either the device's `100.x.y.z` Tailscale IP or its MagicDNS name.
+- A TCP tunnel/reverse tunnel only when VPN-style routing is not possible; restrict it to TCP `45873` and keep Wifi Chat Pro remote security enabled.
+
+Avoid exposing TCP `45873` directly to the public internet without a VPN/tunnel and firewall allow-list. LAN discovery remains UDP broadcast and will not work across the internet; remote peers are added manually.
+
+### Remote Security Setup
+
+Do this on both devices before sending over a tunnel/public IP:
+
+1. Open the shield/VPN icon in the toolbar.
+2. Enable **Require secure remote auth**.
+3. Enter the same **User ID** and a long shared password on both devices.
+4. Generate or enter the same **TOTP secret** on both devices.
+5. Copy the Authenticator setup URI into Google Authenticator, Microsoft Authenticator, 1Password, or another RFC 6238-compatible app.
+6. Add the other device's tunnel IP and port `45873`.
+7. Select the remote peer and send chat, files, or folders as usual.
+
+Remote/manual peers use an encrypted socket envelope. The app derives an AES-GCM key from the shared password and TOTP secret, verifies the short-lived TOTP code and password proof, then decrypts the inner chat/file/folder payload. Existing LAN peers still work with the original local-network flow.
+
+Keep the TOTP secret and shared password private. If either is exposed, generate a new secret and change the password on both devices.
+
+### Tailscale Setup
+
+1. Install Tailscale on the desktop and phone.
+2. Sign both devices into the same tailnet.
+3. In Tailscale, confirm the two devices can ping each other.
+4. In Wifi Chat Pro, open **Remote secure IP** and select **Tailscale**.
+5. Enter the other device's Tailscale IP, such as `100.x.y.z`, or its MagicDNS name, such as `desktop-name` or `desktop-name.tailnet-name.ts.net`.
+6. Keep port `45873`.
+7. Use Tailscale ACLs or grants to allow only the needed source device/user to connect to TCP `45873` on the receiving device.
+
+Tailscale MagicDNS automatically gives devices DNS names inside the tailnet, so raw tunnel IPs are optional when MagicDNS is enabled.
 
 ## Windows App
 
@@ -53,41 +93,41 @@ The Windows build requests matte black native title chrome and rounded window co
 
 ### Run The Portable Build
 
-Use the full release folder or ZIP. Do not copy only `wifi_chat_share.exe`; Flutter desktop apps need the DLLs and `data` folder next to the executable.
+Use the full release folder or ZIP. Do not copy only `wifi_chat_pro.exe`; Flutter desktop apps need the DLLs and `data` folder next to the executable.
 
 Current local Windows output:
 
 ```text
-build/windows/x64/runner/Release/wifi_chat_share.exe
+build/windows/x64/runner/Release/wifi_chat_pro.exe
 ```
 
 Portable ZIP output:
 
 ```text
-dist/WifiChatShare-Windows-x64-portable.zip
+dist/WifiChatPro-Windows-x64-portable.zip
 ```
 
 To run on a new Windows desktop:
 
-1. Copy `WifiChatShare-Windows-x64-portable.zip` to the computer.
+1. Copy `WifiChatPro-Windows-x64-portable.zip` to the computer.
 2. Right-click the ZIP and choose Extract All.
 3. Open the extracted folder.
 4. Run the firewall script as Administrator.
-5. Start `wifi_chat_share.exe`.
+5. Start `wifi_chat_pro.exe`.
 
 ### Run The Firewall Script As Administrator
 
 On every Windows PC:
 
 1. Open the extracted app folder.
-2. Either open Wifi Chat Share Settings and click **Run** beside **Allow firewall**, or right-click `Allow_WifiChatShare_Firewall.ps1`.
+2. Either open Wifi Chat Pro Settings and click **Run** beside **Allow firewall**, or right-click `Allow_WifiChatPro_Firewall.ps1`.
 3. Choose Run with PowerShell if launching the script manually.
 4. Approve the Administrator/UAC prompt. Administrator access is required only for changing Windows Firewall rules.
 
 If Windows blocks script execution, open PowerShell as Administrator in the extracted folder and run:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Allow_WifiChatShare_Firewall.ps1
+powershell -ExecutionPolicy Bypass -File .\Allow_WifiChatPro_Firewall.ps1
 ```
 
 The script allows inbound UDP `45872` and TCP `45873`.
@@ -98,7 +138,7 @@ Open the gear icon in the app:
 
 - Theme: choose Light, Dark, or Matrix. Matrix uses a green-on-black binary-code background with a terminal-style interface.
 - Notifications: enables popup notifications for received messages and files.
-- Start with Windows: creates a current-user Startup launcher so Wifi Chat Share opens automatically when you sign in.
+- Start with Windows: creates a current-user Startup launcher so Wifi Chat Pro opens automatically when you sign in.
 - Allow firewall: runs the Windows firewall setup helper. This requires Administrator/UAC approval because it creates inbound firewall rules.
 - Test peer port: runs the TCP `45873` port test helper. This does not need Administrator permission.
 - Received files location: choose the download/save folder.
@@ -116,7 +156,7 @@ The Windows app keeps running when minimized and moves to the taskbar tray/notif
 - Click Close to hide the app window to the tray while discovery, chat, and file receiving continue.
 - Double-click the tray icon to show the app again.
 - Right-click the tray icon for:
-  - Show Wifi Chat Share
+  - Show Wifi Chat Pro
   - Refresh nearby devices
   - Connections list
   - Exit
@@ -125,7 +165,7 @@ Use Exit from the tray menu when you want to fully close the background app.
 
 ### Start With Windows
 
-On Windows, open Settings and enable Start with Windows if you want Wifi Chat Share to start automatically after sign-in.
+On Windows, open Settings and enable Start with Windows if you want Wifi Chat Pro to start automatically after sign-in.
 
 This creates a launcher in the current user's Windows Startup folder, so it does not need Administrator permission. If you move the portable app folder to a different location, turn Start with Windows off and back on so Windows stores the new executable path.
 
@@ -133,7 +173,7 @@ This creates a launcher in the current user's Windows Startup folder, so it does
 
 If the app opens but another PC cannot send to it:
 
-1. Run `Allow_WifiChatShare_Firewall.ps1` as Administrator on the receiving PC.
+1. Run `Allow_WifiChatPro_Firewall.ps1` as Administrator on the receiving PC.
 2. Make sure both devices are on the same Wi-Fi/LAN.
 3. Check the app's **Ping IP** label and try `ping <that-ip-address>` from the other PC.
 4. Keep the app open on both devices.
@@ -141,12 +181,12 @@ If the app opens but another PC cannot send to it:
 6. Open Settings and click **Run** beside **Test peer port**, or run the included port test script from the release folder:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Test_WifiChatShare_Port.ps1
+powershell -ExecutionPolicy Bypass -File .\Test_WifiChatPro_Port.ps1
 ```
 
 The port test helper asks for the peer **Ping IP** and does not require Administrator permission.
 
-If Windows says the app is corrupted, extract the whole ZIP again and run `wifi_chat_share.exe` from inside the extracted release folder.
+If Windows says the app is corrupted, extract the whole ZIP again and run `wifi_chat_pro.exe` from inside the extracted release folder.
 
 ## Android App
 
@@ -165,7 +205,7 @@ build/app/outputs/bundle/release/app-release.aab
 Play Store package ID:
 
 ```text
-com.neoapps.wifichatshare
+com.neoapps.wifichatpro
 ```
 
 ### Install With ADB
@@ -182,7 +222,7 @@ Enable Developer Options and USB debugging on the Android phone, connect it by U
 1. Copy `app-release.apk` to the Android phone.
 2. Open the APK on the phone.
 3. Allow install from this source if Android asks.
-4. Open Wifi Chat Share.
+4. Open Wifi Chat Pro.
 5. Allow notification permission on Android 13+.
 6. Keep the app open while testing discovery and transfers.
 
@@ -196,12 +236,12 @@ Enable Developer Options and USB debugging on the Android phone, connect it by U
 - The folder button sends a complete folder and restores it as a folder on the receiving device.
 - The Settings screen is compact and scrollable so it fits Android phones with large display/text settings.
 - Open Settings and tap Add under Android Quick Settings tile to add the tile on Android 13+.
-- The Quick Settings tile opens Wifi Chat Share when it is off and closes the app when tapped while active.
-- On older Android versions, manually edit Quick Settings and drag the Wifi Chat Share tile into the active tile area if Android does not show the add prompt.
+- The Quick Settings tile opens Wifi Chat Pro when it is off and closes the app when tapped while active.
+- On older Android versions, manually edit Quick Settings and drag the Wifi Chat Pro tile into the active tile area if Android does not show the add prompt.
 
 ### Google Play Store
 
-The Play Store release is prepared for the **Neo Apps** brand with package ID `com.neoapps.wifichatshare` and app version `1.0.0+1`.
+The Play Store release is prepared for the **Neo Apps** brand with package ID `com.neoapps.wifichatpro` and app version `1.0.0+1`.
 
 For a new Google Play app, upload the signed Android App Bundle:
 
@@ -221,8 +261,8 @@ Back up both files securely. They are needed for future Play Store updates.
 To submit the app:
 
 1. Sign in to Google Play Console with the **Neo Apps** developer account.
-2. Create a new app named `Wifi Chat Share`.
-3. Use package ID `com.neoapps.wifichatshare`.
+2. Create a new app named `Wifi Chat Pro`.
+3. Use package ID `com.neoapps.wifichatpro`.
 4. Upload `app-release.aab` to an internal test, closed test, open test, or production release track.
 5. Complete the Play Console store listing, app content, data safety, privacy policy, target audience, and testing requirements.
 6. Submit for Google review.
@@ -265,7 +305,7 @@ In Xcode:
 
 1. Select the Runner target.
 2. Choose your Apple Developer Team.
-3. Confirm or change the bundle identifier. The current default is `com.neolocal.wifichatshare`.
+3. Confirm or change the bundle identifier. The current default is `com.neolocal.wifichatpro`.
 4. Connect a real iPhone.
 5. Build and run from Xcode.
 6. Allow local network and notification prompts on the phone.
@@ -304,7 +344,7 @@ flutter build macos --release
 Output:
 
 ```text
-build/macos/Build/Products/Release/Wifi Chat Share.app
+build/macos/Build/Products/Release/Wifi Chat Pro.app
 ```
 
 Run the app, allow macOS firewall/network prompts, and enable notifications if macOS asks.

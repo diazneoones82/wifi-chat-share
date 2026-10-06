@@ -1,4 +1,4 @@
-package com.neoapps.wifichatshare
+package com.neoapps.wifichatpro
 
 import android.app.StatusBarManager
 import android.content.BroadcastReceiver
@@ -52,10 +52,10 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        val componentName = ComponentName(this, WifiChatShareTileService::class.java)
+        val componentName = ComponentName(this, WifiChatProTileService::class.java)
         statusBarManager.requestAddTileService(
             componentName,
-            "Wifi Chat Share",
+            "Wifi Chat Pro",
             Icon.createWithResource(this, R.mipmap.ic_launcher),
             mainExecutor,
         ) { response ->
@@ -94,9 +94,9 @@ class MainActivity : FlutterActivity() {
     }
 
     companion object {
-        const val CHANNEL = "wifi_chat_share/android"
-        const val ACTION_CLOSE_APP = "com.neoapps.wifichatshare.CLOSE_APP"
-        private const val PREFS = "wifi_chat_share_quick_settings"
+        const val CHANNEL = "wifi_chat_pro/android"
+        const val ACTION_CLOSE_APP = "com.neoapps.wifichatpro.CLOSE_APP"
+        private const val PREFS = "wifi_chat_pro_quick_settings"
         private const val KEY_TILE_ACTIVE = "tile_active"
 
         fun isTileActive(context: Context): Boolean {
@@ -109,7 +109,7 @@ class MainActivity : FlutterActivity() {
                 .edit()
                 .putBoolean(KEY_TILE_ACTIVE, active)
                 .apply()
-            WifiChatShareTileService.requestTileStateUpdate(context)
+            WifiChatProTileService.requestTileStateUpdate(context)
         }
     }
 }
