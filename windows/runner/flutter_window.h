@@ -4,6 +4,7 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <flutter/method_channel.h>
+#include <shellapi.h>
 
 #include <memory>
 #include <string>
@@ -32,6 +33,7 @@ class FlutterWindow : public Win32Window {
   void ShowTrayMenu(HWND hwnd);
   void HandleTrayCommand(HWND hwnd, int command_id);
   void UpdateTrayPeers(const std::vector<std::string>& peers);
+  void HandleDroppedFiles(HDROP drop);
 
   // The project to run.
   flutter::DartProject project_;

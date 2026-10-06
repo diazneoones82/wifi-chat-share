@@ -7,11 +7,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.drawable.Icon
+import android.net.Uri
 import android.os.Build
+import android.os.StrictMode
 import android.service.quicksettings.Tile
+import android.webkit.MimeTypeMap
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : FlutterActivity() {
     private var closeReceiver: BroadcastReceiver? = null
@@ -21,6 +25,7 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "requestQuickSettingsTile" -> requestQuickSettingsTile(result)
+                "openPath" -> openPath(call.argument<String>("path"), result)
                 else -> result.notImplemented()
             }
         }
@@ -63,6 +68,40 @@ class MainActivity : FlutterActivity() {
                 response == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ||
                     response == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED
             )
+        }
+    }
+
+    private fun openPath(path: String?, result: MethodChannel.Result) {
+        val file = path?.let { File(it) }
+        if (file == null || !file.exists()) {
+            result.success(false)
+            return
+        }
+        try {
+            @Suppress("DiscouragedPrivateApi")
+            StrictMode::class.java
+                .getMethod("disableDeathOnFileUriExposure")
+                .invoke(null)
+        } catch (_: Exception) {
+        }
+
+        val uri = Uri.fromFile(file)
+        val mimeType = if (file.isDirectory) {
+            "resource/folder"
+        } else {
+            val extension = file.extension.lowercase()
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
+        }
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mimeType)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            startActivity(Intent.createChooser(intent, "Open with"))
+            result.success(true)
+        } catch (_: Exception) {
+            result.success(false)
         }
     }
 

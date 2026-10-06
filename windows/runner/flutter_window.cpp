@@ -32,6 +32,21 @@ std::wstring Utf8ToWide(const std::string& value) {
   return result;
 }
 
+std::string WideToUtf8(const std::wstring& value) {
+  if (value.empty()) {
+    return "";
+  }
+  const int size = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, nullptr, 0,
+                                      nullptr, nullptr);
+  if (size <= 0) {
+    return "";
+  }
+  std::string result(size - 1, '\0');
+  WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, result.data(), size,
+                      nullptr, nullptr);
+  return result;
+}
+
 }  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -78,10 +93,16 @@ bool FlutterWindow::OnCreate() {
           result->Success();
           return;
         }
+        if (call.method_name() == "showApp") {
+          ShowFromTray(GetHandle());
+          result->Success();
+          return;
+        }
         result->NotImplemented();
       });
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  DragAcceptFiles(GetHandle(), TRUE);
   AddTrayIcon(GetHandle());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -97,6 +118,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  DragAcceptFiles(GetHandle(), FALSE);
   RemoveTrayIcon();
   tray_channel_ = nullptr;
 
@@ -148,6 +170,9 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
         return 0;
       }
       break;
+    case WM_DROPFILES:
+      HandleDroppedFiles(reinterpret_cast<HDROP>(wparam));
+      return 0;
     case WM_COMMAND:
       HandleTrayCommand(hwnd, LOWORD(wparam));
       return 0;
@@ -192,7 +217,7 @@ void FlutterWindow::RemoveTrayIcon() {
 
 void FlutterWindow::ShowFromTray(HWND hwnd) {
   ShowWindow(hwnd, SW_RESTORE);
-  ShowWindow(hwnd, SW_SHOW);
+  ShowWindow(hwnd, SW_SHOWMAXIMIZED);
   SetForegroundWindow(hwnd);
 }
 
@@ -259,4 +284,28 @@ void FlutterWindow::HandleTrayCommand(HWND hwnd, int command_id) {
 
 void FlutterWindow::UpdateTrayPeers(const std::vector<std::string>& peers) {
   tray_peers_ = peers;
+}
+
+void FlutterWindow::HandleDroppedFiles(HDROP drop) {
+  if (!drop) {
+    return;
+  }
+  flutter::EncodableList paths;
+  const UINT count = DragQueryFile(drop, 0xFFFFFFFF, nullptr, 0);
+  for (UINT index = 0; index < count; ++index) {
+    const UINT length = DragQueryFile(drop, index, nullptr, 0);
+    if (length == 0) {
+      continue;
+    }
+    std::wstring path(length + 1, L'\0');
+    DragQueryFile(drop, index, path.data(), length + 1);
+    path.resize(length);
+    paths.emplace_back(WideToUtf8(path));
+  }
+  DragFinish(drop);
+  if (tray_channel_ && !paths.empty()) {
+    tray_channel_->InvokeMethod(
+        "filesDropped",
+        std::make_unique<flutter::EncodableValue>(std::move(paths)));
+  }
 }

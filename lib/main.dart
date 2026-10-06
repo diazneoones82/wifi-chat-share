@@ -183,6 +183,7 @@ class WifiChatProApp extends StatefulWidget {
 class _WifiChatProAppState extends State<WifiChatProApp> {
   AppVisualTheme visualTheme = AppVisualTheme.light;
   bool notificationsEnabled = true;
+  bool chatPingNotificationsEnabled = true;
   bool startAtStartup = false;
   String? downloadDirectory;
 
@@ -204,10 +205,14 @@ class _WifiChatProAppState extends State<WifiChatProApp> {
               ? AppVisualTheme.dark
               : AppVisualTheme.light);
       notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
+      chatPingNotificationsEnabled =
+          prefs.getBool('chatPingNotificationsEnabled') ?? true;
       startAtStartup = prefs.getBool('startAtStartup') ?? false;
       downloadDirectory = prefs.getString('downloadDirectory');
     });
     await NotificationService.instance.setEnabled(notificationsEnabled);
+    await NotificationService.instance
+        .setMessagePopupsEnabled(chatPingNotificationsEnabled);
     if (Platform.isWindows && startAtStartup) {
       await WindowsStartupService.instance.setEnabled(true);
     }
@@ -239,6 +244,13 @@ class _WifiChatProAppState extends State<WifiChatProApp> {
     setState(() => notificationsEnabled = value);
   }
 
+  Future<void> _setChatPingNotificationsEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('chatPingNotificationsEnabled', value);
+    await NotificationService.instance.setMessagePopupsEnabled(value);
+    setState(() => chatPingNotificationsEnabled = value);
+  }
+
   Future<void> _setStartAtStartup(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     final applied = await WindowsStartupService.instance.setEnabled(value);
@@ -261,10 +273,12 @@ class _WifiChatProAppState extends State<WifiChatProApp> {
         visualTheme: visualTheme,
         downloadDirectory: downloadDirectory,
         notificationsEnabled: notificationsEnabled,
+        chatPingNotificationsEnabled: chatPingNotificationsEnabled,
         startAtStartup: startAtStartup,
         onVisualThemeChanged: _setVisualTheme,
         onDownloadDirectoryChanged: _setDownloadDirectory,
         onNotificationsChanged: _setNotificationsEnabled,
+        onChatPingNotificationsChanged: _setChatPingNotificationsEnabled,
         onStartAtStartupChanged: _setStartAtStartup,
       ),
     );
@@ -276,10 +290,12 @@ class HomeScreen extends StatefulWidget {
     required this.visualTheme,
     required this.downloadDirectory,
     required this.notificationsEnabled,
+    required this.chatPingNotificationsEnabled,
     required this.startAtStartup,
     required this.onVisualThemeChanged,
     required this.onDownloadDirectoryChanged,
     required this.onNotificationsChanged,
+    required this.onChatPingNotificationsChanged,
     required this.onStartAtStartupChanged,
     super.key,
   });
@@ -287,10 +303,12 @@ class HomeScreen extends StatefulWidget {
   final AppVisualTheme visualTheme;
   final String? downloadDirectory;
   final bool notificationsEnabled;
+  final bool chatPingNotificationsEnabled;
   final bool startAtStartup;
   final ValueChanged<AppVisualTheme> onVisualThemeChanged;
   final ValueChanged<String?> onDownloadDirectoryChanged;
   final ValueChanged<bool> onNotificationsChanged;
+  final ValueChanged<bool> onChatPingNotificationsChanged;
   final ValueChanged<bool> onStartAtStartupChanged;
 
   @override
@@ -308,7 +326,12 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     service = LanChatService(downloadDirectory: widget.downloadDirectory)
       ..start();
-    WindowsTrayBridge.instance.attach(service);
+    WindowsTrayBridge.instance.attach(
+      service,
+      onFilesDropped: _sendDroppedPathsToSelectedPeer,
+    );
+    NotificationService.instance.onChatNotificationTap =
+        _selectPeerFromNotification;
   }
 
   @override
@@ -322,6 +345,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     WindowsTrayBridge.instance.detach(service);
+    if (NotificationService.instance.onChatNotificationTap ==
+        _selectPeerFromNotification) {
+      NotificationService.instance.onChatNotificationTap = null;
+    }
     messageFocusNode.dispose();
     messageController.dispose();
     service.dispose();
@@ -458,10 +485,12 @@ class _HomeScreenState extends State<HomeScreen> {
         visualTheme: widget.visualTheme,
         downloadDirectory: widget.downloadDirectory,
         notificationsEnabled: widget.notificationsEnabled,
+        chatPingNotificationsEnabled: widget.chatPingNotificationsEnabled,
         startAtStartup: widget.startAtStartup,
         onVisualThemeChanged: widget.onVisualThemeChanged,
         onDownloadDirectoryChanged: widget.onDownloadDirectoryChanged,
         onNotificationsChanged: widget.onNotificationsChanged,
+        onChatPingNotificationsChanged: widget.onChatPingNotificationsChanged,
         onStartAtStartupChanged: widget.onStartAtStartupChanged,
         service: service,
       ),
@@ -479,6 +508,23 @@ class _HomeScreenState extends State<HomeScreen> {
     service.clearPeers();
     setState(() => selectedPeerId = null);
   }
+
+  void _selectPeerFromNotification(String peerId) {
+    if (!mounted || !service.peers.containsKey(peerId)) {
+      return;
+    }
+    setState(() => selectedPeerId = peerId);
+  }
+
+  Future<void> _sendDroppedPathsToSelectedPeer(List<String> paths) async {
+    final selectedPeer =
+        selectedPeerId == null ? null : service.peers[selectedPeerId];
+    if (selectedPeer == null) {
+      service.setStatus('Open a chat before dropping files');
+      return;
+    }
+    await service.sendDroppedPaths(selectedPeer, paths);
+  }
 }
 
 class SettingsDialog extends StatelessWidget {
@@ -486,10 +532,12 @@ class SettingsDialog extends StatelessWidget {
     required this.visualTheme,
     required this.downloadDirectory,
     required this.notificationsEnabled,
+    required this.chatPingNotificationsEnabled,
     required this.startAtStartup,
     required this.onVisualThemeChanged,
     required this.onDownloadDirectoryChanged,
     required this.onNotificationsChanged,
+    required this.onChatPingNotificationsChanged,
     required this.onStartAtStartupChanged,
     required this.service,
     super.key,
@@ -498,10 +546,12 @@ class SettingsDialog extends StatelessWidget {
   final AppVisualTheme visualTheme;
   final String? downloadDirectory;
   final bool notificationsEnabled;
+  final bool chatPingNotificationsEnabled;
   final bool startAtStartup;
   final ValueChanged<AppVisualTheme> onVisualThemeChanged;
   final ValueChanged<String?> onDownloadDirectoryChanged;
   final ValueChanged<bool> onNotificationsChanged;
+  final ValueChanged<bool> onChatPingNotificationsChanged;
   final ValueChanged<bool> onStartAtStartupChanged;
   final LanChatService service;
 
@@ -600,6 +650,19 @@ class SettingsDialog extends StatelessWidget {
                             subtitle: const Text('Popups for chats and files'),
                             value: notificationsEnabled,
                             onChanged: onNotificationsChanged,
+                          ),
+                          SwitchListTile(
+                            dense: true,
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 8),
+                            secondary: const Icon(Icons.message_outlined),
+                            title: const Text('Chat ping popups'),
+                            subtitle:
+                                const Text('Popup notification for each chat'),
+                            value: chatPingNotificationsEnabled,
+                            onChanged: notificationsEnabled
+                                ? onChatPingNotificationsChanged
+                                : null,
                           ),
                           SwitchListTile(
                             dense: true,
@@ -1660,6 +1723,13 @@ class MessageBubble extends StatelessWidget {
                       foreground: foreground,
                     ),
                   ],
+                  if (isAttachment && message.filePath != null) ...[
+                    const SizedBox(width: 4),
+                    OpenAttachmentLocationButton(
+                      path: message.filePath!,
+                      foreground: foreground,
+                    ),
+                  ],
                 ],
               ),
               if (isAttachment && message.filePath != null) ...[
@@ -1714,6 +1784,40 @@ class CopyMessageButton extends StatelessWidget {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Copied')),
+            );
+          }
+        },
+      ),
+    );
+  }
+}
+
+class OpenAttachmentLocationButton extends StatelessWidget {
+  const OpenAttachmentLocationButton({
+    required this.path,
+    required this.foreground,
+    super.key,
+  });
+
+  final String path;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Open file location',
+      child: IconButton(
+        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        iconSize: 18,
+        color: foreground.withAlpha(204),
+        icon: const Icon(Icons.folder_open_outlined),
+        onPressed: () async {
+          final opened = await AttachmentLocationService.open(path);
+          if (context.mounted && !opened) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Could not open file location')),
             );
           }
         },
@@ -2324,6 +2428,31 @@ class LanChatService extends ChangeNotifier {
         .toList(growable: false)
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return List.unmodifiable(values);
+  }
+
+  void setStatus(String value) {
+    lastStatus = value;
+    notifyListeners();
+  }
+
+  Future<void> sendDroppedPaths(PeerDevice peer, List<String> paths) async {
+    final cleanPaths = paths
+        .map((path) => path.trim())
+        .where((path) => path.isNotEmpty)
+        .toList(growable: false);
+    if (cleanPaths.isEmpty) {
+      return;
+    }
+    lastStatus = 'Sending ${cleanPaths.length} dropped item(s) to ${peer.name}';
+    notifyListeners();
+    for (final path in cleanPaths) {
+      final type = await FileSystemEntity.type(path);
+      if (type == FileSystemEntityType.directory) {
+        await sendFolder(peer, Directory(path));
+      } else if (type == FileSystemEntityType.file) {
+        await sendFile(peer, File(path));
+      }
+    }
   }
 
   void setDownloadDirectory(String? path) {
@@ -3300,7 +3429,8 @@ class LanChatService extends ChangeNotifier {
         ),
       );
       lastStatus = 'Message received from $fromName';
-      NotificationService.instance.showMessage(fromName: fromName, text: text);
+      NotificationService.instance
+          .showMessage(peerId: peerId, fromName: fromName, text: text);
     }
 
     if (header['type'] == 'large-file-chunk') {
@@ -3324,8 +3454,7 @@ class LanChatService extends ChangeNotifier {
       if (!await incomingDir.exists()) {
         await incomingDir.create(recursive: true);
       }
-      final file = File(
-          '${incomingDir.path}${Platform.pathSeparator}${DateTime.now().millisecondsSinceEpoch}-$fileName');
+      final file = await _uniqueFileInDirectory(incomingDir, fileName);
       await bodyFile.copy(file.path);
 
       _addMessage(
@@ -3357,9 +3486,7 @@ class LanChatService extends ChangeNotifier {
       if (!await incomingDir.exists()) {
         await incomingDir.create(recursive: true);
       }
-      final folder = Directory(
-        '${incomingDir.path}${Platform.pathSeparator}${DateTime.now().millisecondsSinceEpoch}-$folderName',
-      );
+      final folder = await _uniqueDirectoryInDirectory(incomingDir, folderName);
       await _extractFolderArchive(bodyFile, folder);
 
       _addMessage(
@@ -3414,8 +3541,7 @@ class LanChatService extends ChangeNotifier {
       if (!await incomingDir.exists()) {
         await incomingDir.create(recursive: true);
       }
-      final file = File(
-          '${incomingDir.path}${Platform.pathSeparator}${DateTime.now().millisecondsSinceEpoch}-$fileName');
+      final file = await _uniqueFileInDirectory(incomingDir, fileName);
       state = LargeFileReceiveState(
         transferId: transferId,
         peerId: peerId,
@@ -4046,7 +4172,9 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
   bool _enabled = true;
+  bool _messagePopupsEnabled = true;
   int _nextId = 1;
+  ValueChanged<String>? onChatNotificationTap;
 
   Future<void> init() async {
     if (_initialized) {
@@ -4063,7 +4191,10 @@ class NotificationService {
         ),
       );
 
-      await _plugin.initialize(settings: initializationSettings);
+      await _plugin.initialize(
+        settings: initializationSettings,
+        onDidReceiveNotificationResponse: _handleNotificationResponse,
+      );
       _initialized = true;
     } catch (_) {
       _initialized = false;
@@ -4079,11 +4210,25 @@ class NotificationService {
     await _requestPermission();
   }
 
+  Future<void> setMessagePopupsEnabled(bool value) async {
+    _messagePopupsEnabled = value;
+    if (value && _enabled) {
+      await init();
+      await _requestPermission();
+    }
+  }
+
   Future<void> showMessage(
-      {required String fromName, required String text}) async {
+      {required String peerId,
+      required String fromName,
+      required String text}) async {
+    if (!_messagePopupsEnabled) {
+      return;
+    }
     await _show(
       title: 'Message from $fromName',
       body: text.isEmpty ? 'New message' : text,
+      payload: 'chat:$peerId',
     );
   }
 
@@ -4103,7 +4248,11 @@ class NotificationService {
     );
   }
 
-  Future<void> _show({required String title, required String body}) async {
+  Future<void> _show({
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
     if (!_enabled) {
       return;
     }
@@ -4118,6 +4267,7 @@ class NotificationService {
         id: _nextId++,
         title: title,
         body: safeBody,
+        payload: payload,
         notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             'wifi_chat_pro_events',
@@ -4146,6 +4296,17 @@ class NotificationService {
       return;
     }
   }
+
+  void _handleNotificationResponse(NotificationResponse response) {
+    final payload = response.payload ?? '';
+    if (payload.startsWith('chat:')) {
+      final peerId = payload.substring(5);
+      if (peerId.isNotEmpty) {
+        onChatNotificationTap?.call(peerId);
+      }
+    }
+    AppActivationService.instance.showApp();
+  }
 }
 
 class WindowsTrayBridge {
@@ -4157,13 +4318,18 @@ class WindowsTrayBridge {
 
   LanChatService? _service;
   VoidCallback? _listener;
+  Future<void> Function(List<String> paths)? _onFilesDropped;
 
-  Future<void> attach(LanChatService service) async {
+  Future<void> attach(
+    LanChatService service, {
+    Future<void> Function(List<String> paths)? onFilesDropped,
+  }) async {
     if (!Platform.isWindows) {
       return;
     }
     detach(_service);
     _service = service;
+    _onFilesDropped = onFilesDropped;
     _listener = () => _updatePeers(service);
     service.addListener(_listener!);
     _channel.setMethodCallHandler(_handleMethodCall);
@@ -4179,6 +4345,7 @@ class WindowsTrayBridge {
       service.removeListener(listener);
     }
     _listener = null;
+    _onFilesDropped = null;
     _service = null;
     _channel.setMethodCallHandler(null);
   }
@@ -4187,6 +4354,13 @@ class WindowsTrayBridge {
     switch (call.method) {
       case 'trayRefresh':
         await _service?.refreshNow();
+        return null;
+      case 'filesDropped':
+        final paths = (call.arguments as List?)
+                ?.whereType<String>()
+                .toList(growable: false) ??
+            const <String>[];
+        await _onFilesDropped?.call(paths);
         return null;
       default:
         throw MissingPluginException('Unknown tray method ${call.method}');
@@ -4202,6 +4376,68 @@ class WindowsTrayBridge {
       await _channel.invokeMethod<void>('updatePeers', peers);
     } catch (_) {
       return;
+    }
+  }
+
+  Future<void> showApp() async {
+    if (!Platform.isWindows) {
+      return;
+    }
+    try {
+      await _channel.invokeMethod<void>('showApp');
+    } catch (_) {
+      return;
+    }
+  }
+}
+
+class AppActivationService {
+  AppActivationService._();
+
+  static final AppActivationService instance = AppActivationService._();
+
+  Future<void> showApp() async {
+    if (Platform.isWindows) {
+      await WindowsTrayBridge.instance.showApp();
+    }
+  }
+}
+
+class AttachmentLocationService {
+  AttachmentLocationService._();
+
+  static Future<bool> open(String path) async {
+    if (path.trim().isEmpty) {
+      return false;
+    }
+    if (Platform.isWindows) {
+      return _openWindows(path);
+    }
+    if (Platform.isAndroid) {
+      return AndroidQuickSettingsService.instance.openPath(path);
+    }
+    return false;
+  }
+
+  static Future<bool> _openWindows(String path) async {
+    try {
+      final type = await FileSystemEntity.type(path);
+      if (type == FileSystemEntityType.notFound) {
+        return false;
+      }
+      if (type == FileSystemEntityType.directory) {
+        await Process.start('explorer.exe', [path],
+            mode: ProcessStartMode.detached);
+      } else {
+        await Process.start(
+          'explorer.exe',
+          ['/select,', path],
+          mode: ProcessStartMode.detached,
+        );
+      }
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 }
@@ -4332,6 +4568,18 @@ class AndroidQuickSettingsService {
     }
     try {
       return await _channel.invokeMethod<bool>('requestQuickSettingsTile') ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> openPath(String path) async {
+    if (!Platform.isAndroid) {
+      return false;
+    }
+    try {
+      return await _channel.invokeMethod<bool>('openPath', {'path': path}) ??
           false;
     } catch (_) {
       return false;
@@ -4714,6 +4962,46 @@ String _makeId() {
 String _safeFileName(String name) {
   final sanitized = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
   return sanitized.isEmpty ? 'received-file' : sanitized;
+}
+
+Future<File> _uniqueFileInDirectory(
+    Directory directory, String fileName) async {
+  final safeName = _safeFileName(fileName);
+  final separator = Platform.pathSeparator;
+  var candidate = File('${directory.path}$separator$safeName');
+  if (!await candidate.exists()) {
+    return candidate;
+  }
+  final dot = safeName.lastIndexOf('.');
+  final hasExtension = dot > 0 && dot < safeName.length - 1;
+  final base = hasExtension ? safeName.substring(0, dot) : safeName;
+  final extension = hasExtension ? safeName.substring(dot) : '';
+  for (var index = 1; index < 10000; index++) {
+    candidate = File('${directory.path}$separator$base ($index)$extension');
+    if (!await candidate.exists()) {
+      return candidate;
+    }
+  }
+  return File(
+      '${directory.path}$separator${DateTime.now().microsecondsSinceEpoch}-$safeName');
+}
+
+Future<Directory> _uniqueDirectoryInDirectory(
+    Directory directory, String folderName) async {
+  final safeName = _safeFileName(folderName);
+  final separator = Platform.pathSeparator;
+  var candidate = Directory('${directory.path}$separator$safeName');
+  if (!await candidate.exists()) {
+    return candidate;
+  }
+  for (var index = 1; index < 10000; index++) {
+    candidate = Directory('${directory.path}$separator$safeName ($index)');
+    if (!await candidate.exists()) {
+      return candidate;
+    }
+  }
+  return Directory(
+      '${directory.path}$separator${DateTime.now().microsecondsSinceEpoch}-$safeName');
 }
 
 bool _isValidRemoteHost(String value) {
