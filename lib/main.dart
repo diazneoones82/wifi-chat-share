@@ -3128,7 +3128,7 @@ class LanChatService extends ChangeNotifier {
   }) async {
     var outgoingHeader = header;
     var outgoingBody = body;
-    if (peer.secureRemote || remoteSecurity.isUsable) {
+    if (peer.secureRemote) {
       final secureEnvelope = await RemoteCrypto.encryptEnvelope(
         settings: remoteSecurity,
         localId: localId,
